@@ -130,7 +130,9 @@ resample <- function(data,n.units){
   units <- unique(data$unitID)
   these.units <- sample(units,n.units,replace=T)
   # Randomly select (with replacement) start months from the unit-level distribution of start months
-  starts <- (data %>% group_by(unitID) %>% slice(1) %>% ungroup())$start.month
+  ## LAURA: won't this make very small groups?
+  # truncated to ensure two years of post-data for each start group
+  starts <- (data %>% group_by(unitID) %>% slice(1) %>% ungroup() %>% filter(start.year <= 4))$start.month
   these.starts <- sample(starts,n.units,replace=T)
   
   sampled <- tibble('unitID'=these.units,
