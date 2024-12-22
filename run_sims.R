@@ -11,15 +11,11 @@ source("sim_funs.R")
 
 #### Set parameters ####
 myparams <- list(
-  n.month = 12, # each year has 12 months
-  n.quarter = 4, # each year has 4 quarters
   n.year = 6,
   n.units = 50,
-  sigma_week = 5,
-  sigma_quarter = 1,
+  sigma_quarter = 1, # Variance of the quarter effects
   phi = c(.1,0), 
-  # Overall (non-stationary) trend 
-  const = 0,
+  const = 0,   # Overall (non-stationary) trend of month effect
   # sigma_month is the white noise
   sigma_month = 1,
   
@@ -27,8 +23,9 @@ myparams <- list(
   tau = 3)
 
 
-# Simulation in parallel infrastructure
-nsims <- 2
+# Simulation in parallel
+## Set this 
+nsims <- 2 
 cl <- parallel::makeCluster(2)
 doParallel::registerDoParallel(cl)
 
@@ -51,8 +48,10 @@ saveRDS(stag.results, file=paste0(Sys.Date(),"_stag_sim_results.rds"))
 load("cleaned_force_data.RData")
 
 resample.results <- foreach::foreach(i = 1:nsims,.packages=c('tidyverse','estimatr','car','did'), .combine = 'rbind') %dopar% {
-  resamp.dat <- resample(force.dat,n.units=100)
+  resamp.dat <- resample(force.dat,n.units=50)
   # Inject treatment effects
   inject.analyze(resamp.dat,myparams,staggered=T) %>% mutate(iter=i)
 }
+
+saveRDS(resample.results,file=paste0(Sys.Date(),"_resamp_stag_sim_results.rds"))
 parallel::stopCluster(cl)

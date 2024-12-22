@@ -29,7 +29,7 @@ draw.months <- function(params){
   months.per.quarter <- params$total_num_month/params$total_num_quarter
   months <- tibble(Y.month=Y,
                    # Seasonal month indices (within year)
-                   monthofyear = rep(1:params$n.month,params$n.year),
+                   monthofyear = rep(1:12,params$n.year),
                    # Seasonal month indices (within quarter)
                    monthofquarter = rep(1:months.per.quarter,params$total_num_quarter), 
                    # Overall month index
@@ -51,23 +51,23 @@ draw.months <- function(params){
 
 draw.quarters <- function(params){
   ## Draw a random vector of quarter effects
-  temp <- rnorm(params$n.quarter,0,params$sigma_quarter)
+  temp <- rnorm(4,0,params$sigma_quarter)
   # Sort so that the seasonal effects is always increasing over the year
   quarter.effects <- temp[order(temp)]
   quarters <- tibble(Y.quarter=rep(quarter.effects,params$n.year),
                      # Seasonal quarter indices (within year)
-                     quarterofyear = rep(1:params$n.quarter,params$n.year),
+                     quarterofyear = rep(1:4,params$n.year),
                      # Overall quarter indices
                      q=rep(1:params$total_num_quarter),
                      # Year indices
-                     year=rep(1:params$n.year,each=params$n.quarter))
+                     year=rep(1:params$n.year,each=4))
   return(quarters)
 }
 
 #' Generate quarterly shocks from iid normal
 #' 
 #' @description
-#' `generate.data` generates autocorrelated data for n.units over n.years
+#' `generate.data` generates autocorrelated data for n.units over n.year
 #'
 #' @details Generates quarterly shocks
 #' @param params list with named elements: n.units, n.year, sigma_quarter, sigma_month
@@ -81,8 +81,8 @@ generate.data <- function(params,
                           quarter.byunit=F,
                           unbalanced=F){
   # Convenience computations for use in function calls
-  params$total_num_month = params$n.month * params$n.year
-  params$total_num_quarter = params$n.quarter * params$n.year
+  params$total_num_month = 12 * params$n.year
+  params$total_num_quarter = 4 * params$n.year
 
   # Draw month vectors
   if (month.byunit){
@@ -90,8 +90,8 @@ generate.data <- function(params,
     monthdat <- bind_rows(monthdat, .id="unitID")
   } else {
     months <- draw.months(params)
-    monthdat <- cross_join(months,tibble(unitID=as.character(1:params$n.units))) %>% 
-      arrange(unitID,m)
+    monthdat <- tibble(unitID=as.character(1:params$n.units)) %>%
+      cross_join(months) %>% arrange(unitID,m)
   }
   data <- monthdat
   
@@ -101,8 +101,8 @@ generate.data <- function(params,
     quarterdat <- bind_rows(quarterdat,.id="unitID")
   } else {
     quarters <- draw.quarters(params)
-    quarterdat <- cross_join(quarters,tibble(unitID=as.character(1:params$n.units))) %>% 
-      arrange(unitID,q)
+    quarterdat <- tibble(unitID=as.character(1:params$n.units)) %>% 
+      cross_join(quarters) %>% arrange(unitID,q)
   }
   # Bind to the previous data
   data <- left_join(data,quarterdat,by=c('unitID','q'))
@@ -151,91 +151,23 @@ resample <- function(data,n.units){
 }
 
 #### Inject treatment effects ####
-cons.trt.effects <- function(data, tau, eq.by.grp){
-  # For treatment effects that are equal in all units
-  if (eq.by.grp){
-    data <- data %>%
-      mutate(truth = posttrt*tau) %>%
-      rename(Y.unt = Y) %>% 
-      mutate(Y = Y.unt + truth)
-    return(data)
-  } else {
-    # Randomly assign units to be in a "high" or "low" treatment response group
+add.trt.effects <- function(data, tau, grp.var, time.var){
+  if (grp.var){
     data <- data %>% group_by(unitID) %>%
-      mutate(grp = rbinom(1,1,.5)) %>% ungroup() %>%
-      mutate(tau.g = ifelse(grp==1,tau-(.5*tau),tau+(.5*tau)),
-             truth = posttrt*tau.g) %>%
-      rename(Y.unt = Y) %>%
-      mutate(Y = Y.unt + truth)
-    return(data)
-  }
-}
-
-cons.trt.effects.stag <- function(data, tau, eq.by.grp){
-  # For treatment effects that are the same in all treatment timing groups
-  if (eq.by.grp){
-    data <- data %>%
-      mutate(truth = posttrt*tau) %>%
-      mutate(Y.unt = Y,
-             Y = Y.unt + truth)
-    return(data)
-  } else {
-    # Each treatment timing group has a random treatment response 
-    # Centered around tau (plus or minus 1/2 tau SD on either side)
-    data <- data %>%
-      group_by(start.grp) %>%
-      mutate(tau.g = rnorm(1,tau,.5*tau)) %>%
-      ungroup() %>%
-      mutate(truth = posttrt*tau.g,
-             Y.unt = Y,
-             Y = Y.unt + truth)
-    return(data)
-  }
-}
-
-time.trt.effects <- function(data, tau, eq.by.grp){
-  # Find the start of the post-treatment period
-  t0 <- (filter(data,posttrt==1) %>% mutate(start=first(m)) %>% slice(1))$m
-  
-  # For treatment effects that are equal in all units
-  if (eq.by.grp){
-    data <- data %>%
-      mutate(truth=posttrt*(tau-tau*exp(-.05*(m-t0)))) %>%
-      rename(Y.unt = Y) %>%
-      mutate(Y = Y.unt + truth)
-    return(data)
-  } else {
-    # Randomly assign units to be in a "high" or "low" treatment response group
-    data <- data %>% 
-      group_by(unitID) %>%
       mutate(grp=rbinom(1,1,.5)) %>% ungroup() %>%
-      mutate(tau.g = ifelse(grp==1,tau-(.5*tau),tau+(.5*tau)),
-             truth = posttrt*(tau.g-tau.g*exp(-.05*(m-t0)))) %>%
-      rename(Y.unt = Y) %>%
-      mutate(Y = Y.unt + truth)
-    return(data)
-  }
-}
-
-time.trt.effects.stag <- function(data, tau, eq.by.grp){
-  # For treatment effects that are the same in all treatment timing groups
-  if (eq.by.grp){
-    data <- data %>%
-      mutate(truth=posttrt*(tau-tau*exp(-.05*(m-start.month)))) %>%
-      rename(Y.unt = Y) %>%
-      mutate(Y = Y.unt + truth)
-    return(data)
+      mutate(tau.g = ifelse(grp==1,tau-(.5*tau),tau+(.5*tau)))
   } else {
-    data <- data %>% 
-      # Treatment timing group has either "low" (early) or "high" (late) treatment response
-      mutate(tau.g = ifelse(start.grp==1,tau-(.5*tau),tau+(.5*tau)),
-             truth = posttrt*(tau.g-tau.g*exp(-.05*(m-start.month)))) %>%
-      rename(Y.unt = Y) %>%
-      mutate(Y = Y.unt + truth)
-    return(data)
+    data <- data %>% mutate(tau.g = tau)
   }
+  if (time.var){
+      data <- data %>% mutate(truth = posttrt*(tau.g-tau.g*exp(-.05*(m-start.month))))
+    } else {
+      data <- data %>% mutate(truth = posttrt*tau.g)
+    }
+  data <- data %>%
+    rename(Y.unt = Y) %>%
+    mutate(Y = Y.unt + truth)
 }
-
 
 #### Analyze data functions ####
 joint.tests <- function(fitted.model){
@@ -254,7 +186,7 @@ joint.tests <- function(fitted.model){
     joint.F <- car::linearHypothesis(fitted.model,param.names[which.params],vcov.=vcovCL,test="F",singular.ok = TRUE)
     # Construct the hypothesis matrix for linear trend test:
     contr <- rep(0,length(param.names))
-    contr[which.params] <- contr.poly(sum(which.params))[,".L"]
+    contr[which.params] <- contr.poly(sum(which.param))[,".L"]
     trend <- car::linearHypothesis(fitted.model,contr,vcov.=vcovCL,test="F",singular.ok = TRUE)
     results$test.stat <- c(joint.F[2,'F'],trend[2,'F'])
     results$pval <- c(joint.F[2,'Pr(>F)'],trend[2,'Pr(>F)'])
@@ -281,30 +213,25 @@ filter_fun <- function(fitted.model,group) {
 }
 
 analyze.data.common <- function(data,is.tv){
-  data <- data %>% 
+  monthly_data <- data %>% 
     mutate(unitID=factor(unitID),
            monthofyear=factor(monthofyear),
            quarterofyear=factor(quarterofyear),
            m=factor(m),
            q=factor(q),
-           year=factor(year))
-  
-  ## Aggregate to month
-  monthly_data = data %>%
-    group_by(unitID,m,monthofyear,q,quarterofyear,year) %>%
-    summarise(across(c(Y,treatment,post,posttrt,truth),mean),.groups="keep") %>% ungroup() %>%
-    mutate(postmonth = factor(ifelse(post>0,m,0)), 
+           year=factor(year),
+           postmonth = factor(ifelse(post>0,m,0)),
            postmonthtrt = factor(ifelse(posttrt==1,m,0)))
   
   ## Aggregate to quarter
-  quarterly_data = data %>%
+  quarterly_data = monthly_data %>%
     group_by(unitID,q,quarterofyear,year) %>%
     summarise(across(c(Y,treatment,post,posttrt,truth),mean),.groups="keep") %>% ungroup() %>%
     mutate(postquarter = factor(ifelse(post>0,q,0)), 
            postquartertrt = factor(ifelse(posttrt==1,q,0)))
   
   # Aggregate to year
-  yearly_data = data %>%
+  yearly_data = monthly_data %>%
     group_by(unitID,year) %>%
     summarise(across(c(Y,treatment,post,posttrt,truth),mean),.groups="keep") %>% ungroup() %>%
     mutate(postyear = factor(ifelse(post>0,year,0)),
@@ -313,16 +240,16 @@ analyze.data.common <- function(data,is.tv){
   if (is.tv){
     monthly_DID_2x2= estimatr::lm_robust(Y ~ post + treatment + postmonthtrt, data = monthly_data, clusters=unitID, se_type="stata")
     monthly_DID_0  = estimatr::lm_robust(Y ~ postmonthtrt, fixed_effects = ~unitID + postmonth, data = monthly_data, clusters=unitID,se_type="stata")
-    monthly_DID_sm = estimatr::lm_robust(Y ~ postmonthtrt, fixed_effects = ~unitID + postmonth + monthofyear + year, data = monthly_data, clusters=unitID,se_type="stata")
-    monthly_DID_sq = estimatr::lm_robust(Y ~ postmonthtrt, fixed_effects = ~unitID + postmonth + quarterofyear + year, data = monthly_data, clusters=unitID,se_type="stata")
-    monthly_DID_um = estimatr::lm_robust(Y ~ postmonthtrt, fixed_effects = ~unitID + postmonth + m,data = monthly_data, clusters=unitID,se_type="stata")
-    monthly_DID_uq = estimatr::lm_robust(Y ~ postmonthtrt, fixed_effects = ~unitID + postmonth + q,data = monthly_data, clusters=unitID,se_type="stata")
+    #monthly_DID_sm = estimatr::lm_robust(Y ~ postmonthtrt, fixed_effects = ~unitID + postmonth + monthofyear + year, data = monthly_data, clusters=unitID,se_type="stata")
+    #monthly_DID_sq = estimatr::lm_robust(Y ~ postmonthtrt, fixed_effects = ~unitID + postmonth + quarterofyear + year, data = monthly_data, clusters=unitID,se_type="stata")
+    #monthly_DID_um = estimatr::lm_robust(Y ~ postmonthtrt, fixed_effects = ~unitID + postmonth + m,data = monthly_data, clusters=unitID,se_type="stata")
+    #monthly_DID_uq = estimatr::lm_robust(Y ~ postmonthtrt, fixed_effects = ~unitID + postmonth + q,data = monthly_data, clusters=unitID,se_type="stata")
     monthly_DID_uy = estimatr::lm_robust(Y ~ postmonthtrt, fixed_effects = ~unitID + postmonth + year,data = monthly_data, clusters=unitID,se_type="stata")
     
     quarterly_DID_2x2= estimatr::lm_robust(Y ~ post + treatment + postquartertrt, data = quarterly_data, clusters=unitID,se_type="stata")
     quarterly_DID_0  = estimatr::lm_robust(Y ~ postquartertrt, fixed_effects = ~unitID + postquarter, data = quarterly_data, clusters=unitID,se_type="stata")
-    quarterly_DID_sq = estimatr::lm_robust(Y ~ postquartertrt, fixed_effects = ~unitID + postquarter + quarterofyear + year, data = quarterly_data, clusters=unitID,se_type="stata")
-    quarterly_DID_uq = estimatr::lm_robust(Y ~ postquartertrt, fixed_effects = ~unitID + postquarter + q, data = quarterly_data, clusters=unitID,se_type="stata")
+    #quarterly_DID_sq = estimatr::lm_robust(Y ~ postquartertrt, fixed_effects = ~unitID + postquarter + quarterofyear + year, data = quarterly_data, clusters=unitID,se_type="stata")
+    #quarterly_DID_uq = estimatr::lm_robust(Y ~ postquartertrt, fixed_effects = ~unitID + postquarter + q, data = quarterly_data, clusters=unitID,se_type="stata")
     quarterly_DID_uy = estimatr::lm_robust(Y ~ postquartertrt, fixed_effects = ~unitID + postquarter + year, data = quarterly_data, clusters=unitID,se_type="stata")
     
     yearly_DID_2x2 = estimatr::lm_robust(Y ~ post + treatment + postyeartrt, data = yearly_data, clusters=unitID,se_type="stata")
@@ -340,16 +267,16 @@ analyze.data.common <- function(data,is.tv){
   } else {
     monthly_DID_2x2 =estimatr::lm_robust(Y~post+treatment+posttrt, data = monthly_data, clusters=unitID, se_type="stata")
     monthly_DID_0 =  estimatr::lm_robust(Y~post+treatment+posttrt, fixed_effects = ~unitID, data = monthly_data, clusters=unitID,se_type="stata")
-    monthly_DID_sm = estimatr::lm_robust(Y~post+treatment+posttrt, fixed_effects = ~unitID + monthofyear + year, data = monthly_data, clusters=unitID,se_type="stata")
-    monthly_DID_sq = estimatr::lm_robust(Y~post+treatment+posttrt, fixed_effects = ~unitID + quarterofyear + year, data = monthly_data, clusters=unitID,se_type="stata")
-    monthly_DID_um = estimatr::lm_robust(Y~post+treatment+posttrt, fixed_effects = ~unitID + m,data = monthly_data, clusters=unitID,se_type="stata")
-    monthly_DID_uq = estimatr::lm_robust(Y~post+treatment+posttrt, fixed_effects = ~unitID + q,data = monthly_data, clusters=unitID,se_type="stata")
+    #monthly_DID_sm = estimatr::lm_robust(Y~post+treatment+posttrt, fixed_effects = ~unitID + monthofyear + year, data = monthly_data, clusters=unitID,se_type="stata")
+    #monthly_DID_sq = estimatr::lm_robust(Y~post+treatment+posttrt, fixed_effects = ~unitID + quarterofyear + year, data = monthly_data, clusters=unitID,se_type="stata")
+    #monthly_DID_um = estimatr::lm_robust(Y~post+treatment+posttrt, fixed_effects = ~unitID + m,data = monthly_data, clusters=unitID,se_type="stata")
+    #monthly_DID_uq = estimatr::lm_robust(Y~post+treatment+posttrt, fixed_effects = ~unitID + q,data = monthly_data, clusters=unitID,se_type="stata")
     monthly_DID_uy = estimatr::lm_robust(Y~post+treatment+posttrt, fixed_effects = ~unitID + year,data = monthly_data, clusters=unitID,se_type="stata")
     
     quarterly_DID_2x2 =estimatr::lm_robust(Y~post+treatment+posttrt, data = quarterly_data, clusters=unitID,se_type="stata")
     quarterly_DID_0  = estimatr::lm_robust(Y~post+treatment+posttrt, fixed_effects = ~unitID, data = quarterly_data, clusters=unitID,se_type="stata")
-    quarterly_DID_sq = estimatr::lm_robust(Y~post+treatment+posttrt, fixed_effects = ~unitID + quarterofyear + year, data = quarterly_data, clusters=unitID,se_type="stata")
-    quarterly_DID_uq = estimatr::lm_robust(Y~post+treatment+posttrt, fixed_effects = ~unitID + q, data = quarterly_data, clusters=unitID,se_type="stata")
+    #quarterly_DID_sq = estimatr::lm_robust(Y~post+treatment+posttrt, fixed_effects = ~unitID + quarterofyear + year, data = quarterly_data, clusters=unitID,se_type="stata")
+    #quarterly_DID_uq = estimatr::lm_robust(Y~post+treatment+posttrt, fixed_effects = ~unitID + q, data = quarterly_data, clusters=unitID,se_type="stata")
     quarterly_DID_uy = estimatr::lm_robust(Y~post+treatment+posttrt, fixed_effects = ~unitID + year, data = quarterly_data, clusters=unitID,se_type="stata")
     
     yearly_DID_2x2 =estimatr::lm_robust(Y~post+treatment+posttrt, data = yearly_data, clusters=unitID,se_type="stata")
@@ -365,17 +292,16 @@ analyze.data.common <- function(data,is.tv){
   }
   monthly_results <- left_join(rbind(filter_fun(monthly_DID_2x2, "monthly_2x2"),
                                      filter_fun(monthly_DID_0,"monthly_0"),
-                                     filter_fun(monthly_DID_sm, "monthly_sm"),
-                                     filter_fun(monthly_DID_sq, "monthly_sq"),
-                                     filter_fun(monthly_DID_um, "monthly_um"),
-                                     filter_fun(monthly_DID_uq, "monthly_uq"),
+                                     #filter_fun(monthly_DID_sm, "monthly_sm"),
+                                     #filter_fun(monthly_DID_sq, "monthly_sq"),
+                                     #filter_fun(monthly_DID_um, "monthly_um"),
+                                     #filter_fun(monthly_DID_uq, "monthly_uq"),
                                      filter_fun(monthly_DID_uy, "monthly_uy")),month_true,by="time")
   quarterly_results <- left_join(rbind(filter_fun(quarterly_DID_2x2, "quarterly_2x2"),
                                        filter_fun(quarterly_DID_0, "quarterly_0"),
-                                       filter_fun(quarterly_DID_sq, "quarterly_sq"),
-                                       filter_fun(quarterly_DID_uq, "quarterly_uq"),
+                                       #filter_fun(quarterly_DID_sq, "quarterly_sq"),
+                                       #filter_fun(quarterly_DID_uq, "quarterly_uq"),
                                        filter_fun(quarterly_DID_uy, "quarterly_uy")),quarter_true,by="time")
-  
   yearly_results <- left_join(rbind(filter_fun(yearly_DID_2x2, "yearly_2x2"),
                                     filter_fun(yearly_DID_0, "yearly_0"),
                                     filter_fun(yearly_DID_uy, "yearly_uy")),year_true,by="time")
@@ -386,15 +312,15 @@ analyze.data.common <- function(data,is.tv){
   if (is.tv){
     test.results <- bind_rows(safe.joint.tests(monthly_DID_2x2)$result %>% mutate(group= "monthly_2x2",time="post"),
                               safe.joint.tests(monthly_DID_0)$result %>% mutate(group= "monthly_0",time="post"),
-                              safe.joint.tests(monthly_DID_sm)$result %>% mutate(group= "monthly_sm",time="post"),
-                              safe.joint.tests(monthly_DID_sq)$result %>% mutate(group= "monthly_sq",time="post"),
-                              safe.joint.tests(monthly_DID_um)$result %>% mutate(group= "monthly_um",time="post"),
-                              safe.joint.tests(monthly_DID_uq)$ result %>% mutate(group= "monthly_uq",time="post"),
+                              #safe.joint.tests(monthly_DID_sm)$result %>% mutate(group= "monthly_sm",time="post"),
+                              #safe.joint.tests(monthly_DID_sq)$result %>% mutate(group= "monthly_sq",time="post"),
+                              #safe.joint.tests(monthly_DID_um)$result %>% mutate(group= "monthly_um",time="post"),
+                              #safe.joint.tests(monthly_DID_uq)$ result %>% mutate(group= "monthly_uq",time="post"),
                               safe.joint.tests(monthly_DID_uy)$ result %>% mutate(group= "monthly_uy",time="post"),
                               safe.joint.tests(quarterly_DID_2x2)$ result %>% mutate(group= "quarterly_2x2",time="post"),
                               safe.joint.tests(quarterly_DID_0)$ result %>% mutate(group= "quarterly_0",time="post"),
-                              safe.joint.tests(quarterly_DID_sq)$result %>% mutate(group= "quarterly_sq",time="post"),
-                              safe.joint.tests(quarterly_DID_uq)$result %>% mutate(group= "quarterly_uq",time="post"),
+                              #safe.joint.tests(quarterly_DID_sq)$result %>% mutate(group= "quarterly_sq",time="post"),
+                              #safe.joint.tests(quarterly_DID_uq)$result %>% mutate(group= "quarterly_uq",time="post"),
                               safe.joint.tests(quarterly_DID_uy)$result %>% mutate(group= "quarterly_uy",time="post"),
                               safe.joint.tests(yearly_DID_2x2)$result %>% mutate(group= "yearly_2x2",time="post"),
                               safe.joint.tests(yearly_DID_0)$result %>% mutate(group= "yearly_0",time="post"),
@@ -405,21 +331,16 @@ analyze.data.common <- function(data,is.tv){
 }
 
 analyze.data.CS <- function(data){
-  data <- data %>% 
+  monthly_data <- data %>% ungroup() %>%
     mutate(unitID=as.numeric(unitID)) # Requires a numeric unit ID variable
   
-  ## Aggregate to month
-  monthly_data = data %>%
-    group_by(unitID,m,start.month) %>%
-    summarise(Y=mean(Y),.groups="keep") %>% ungroup() 
-  
   ## Aggregate to quarter
-  quarterly_data = data %>%
+  quarterly_data = monthly_data %>%
     group_by(unitID,q,start.quarter) %>%
     summarise(Y=mean(Y),.groups="keep") %>% ungroup() 
   
   # Aggregate to year
-  yearly_data = data %>%
+  yearly_data = monthly_data %>%
     group_by(unitID,year,start.year) %>%
     summarise(Y=mean(Y),.groups="keep") %>% ungroup() 
   
@@ -429,6 +350,7 @@ analyze.data.CS <- function(data){
                              gname = "start.month",
                              xformla = ~1,
                              data = monthly_data,
+                             control_group="notyettreated",
                              allow_unbalanced_panel = TRUE)
   
   quarterly_DID <- did::att_gt(yname = "Y",
@@ -437,6 +359,7 @@ analyze.data.CS <- function(data){
                                gname = "start.quarter",
                                xformla = ~1,
                                data = quarterly_data,
+                               control_group="notyettreated",
                                allow_unbalanced_panel = TRUE)
   
   yearly_DID <-  did::att_gt(yname = "Y",
@@ -445,6 +368,7 @@ analyze.data.CS <- function(data){
                              gname = "start.year",
                              xformla = ~1,
                              data = yearly_data,
+                             control_group="notyettreated",
                              allow_unbalanced_panel = TRUE)
   
   # Truth by treatment timing group at each post-treatment time point
@@ -457,7 +381,7 @@ analyze.data.CS <- function(data){
     summarize(truth=mean(truth),count=length(unique(unitID)),.groups="drop") %>% rename(time=year)
 
   month.agg.es <- did::aggte(monthly_DID, type = "dynamic", na.rm=TRUE)
-  month.agg.gs <- did::aggte(monthly_DID, type = "group", na.rm=TRUE) 
+  month.agg.gs <- did::aggte(monthly_DID, type = "group", na.rm=TRUE)
   quarter.agg.es <- did::aggte(quarterly_DID, type = "dynamic", na.rm=TRUE)
   quarter.agg.gs <- did::aggte(quarterly_DID, type = "group", na.rm=TRUE) 
   year.agg.es <- did::aggte(yearly_DID, type = "dynamic", na.rm=TRUE)
@@ -498,187 +422,102 @@ analyze.and.combine <- function(data){
 }
 
 inject.analyze <- function(data,params,staggered){
+  null.data <- add.trt.effects(data,tau=0,         grp.var = F, time.var = F)
+  cons.data <- add.trt.effects(data,tau=params$tau,grp.var = F, time.var = F)
+  tv.data   <- add.trt.effects(data,tau=params$tau,grp.var = F, time.var = T)
+  gv.data   <- add.trt.effects(data,tau=params$tau,grp.var = T, time.var = F)
+  gtv.data  <- add.trt.effects(data,tau=params$tau,grp.var = T, time.var = T)
   
   if (staggered) {
-    null.data <- cons.trt.effects.stag(data,tau=0,         eq.by.grp = T)
-    cons.data <- cons.trt.effects.stag(data,tau=params$tau,eq.by.grp = T)
-    tv.data   <- time.trt.effects.stag(data,tau=params$tau,eq.by.grp = T)
-    gv.data   <- cons.trt.effects.stag(data,tau=params$tau,eq.by.grp = F)
-    gtv.data  <- time.trt.effects.stag(data,tau=params$tau,eq.by.grp = F)
-    
     null.res <- analyze.data.CS(null.data)
     cons.res <- analyze.data.CS(cons.data)
     tv.res   <- analyze.data.CS(tv.data)
     gv.res   <- analyze.data.CS(gv.data)
     gtv.res  <- analyze.data.CS(gtv.data)
-    
-    results <- bind_rows(null.res %>% mutate(trteff='null'),
-                         cons.res %>% mutate(trteff='constant'),
-                         tv.res %>% mutate(trteff='time-varying'),
-                         gv.res %>% mutate(trteff='group-varying'),
-                         gtv.res %>% mutate(trteff='group- and time-varying')) %>%
-      mutate(adoption='staggered')
   } else {
-    null.data <- cons.trt.effects(data,tau=0, eq.by.grp = T)
-    cons.data <- cons.trt.effects(data, tau=params$tau, eq.by.grp = T)
-    tv.data   <- time.trt.effects(data, tau=params$tau, eq.by.grp = T)
-    gv.data   <- cons.trt.effects(data, tau=params$tau, eq.by.grp = F)
-    gtv.data  <- time.trt.effects(data, tau=params$tau, eq.by.grp = F)
-    
     null.res <- analyze.and.combine(null.data)
     cons.res <- analyze.and.combine(cons.data)
     tv.res   <- analyze.and.combine(tv.data)
     gv.res   <- analyze.and.combine(gv.data)
     gtv.res  <- analyze.and.combine(gtv.data)
-    
-    results <- bind_rows(null.res %>% mutate(trteff='null'),
-                         cons.res %>% mutate(trteff='constant'),
-                         tv.res %>% mutate(trteff='time-varying'),
-                         gv.res %>% mutate(trteff='group-varying'),
-                         gtv.res %>% mutate(trteff='group- and time-varying')) %>%
-      mutate(adoption='common')
+  
   }
+  results <- bind_rows(null.res %>% mutate(trteff='null'),
+                       cons.res %>% mutate(trteff='constant'),
+                       tv.res %>% mutate(trteff='time-varying'),
+                       gv.res %>% mutate(trteff='group-varying'),
+                       gtv.res %>% mutate(trteff='group- and time-varying')) %>%
+    mutate(adoption=ifelse(staggered,'staggered','common'))
   return(results)
 }
 
-make.data <- function(params,staggered){
+# returns a unit-level data frame with binary indicators for treatment
+# and start group
+assign.treatment <- function(data,params,by.trend,staggered){
+  if (by.trend) {
+    trt.dat <- data %>% group_by(unitID) %>%
+      # fit linear model to each unit's data
+      group_modify(~broom::tidy(lm(Y~year,data=.x))) %>% filter(term=="year") %>%
+      # center the slopes (to net out overall trend)
+      mutate(mean.slope=mean(estimate),
+             ctr.slope=estimate-mean.slope,
+             # Units with more positive slopes have higher pr(treat)
+             treatment = rbinom(1,1,plogis(ctr.slope)))
+  } else {
+    # Randomly assign treatment to each unit
+    trt.dat <- data %>% group_by(unitID) %>% slice(1) %>%
+      mutate(treatment = rbinom(1,1,0.5))
+  }
+  if (staggered){
+    trt.dat <- trt.dat %>%
+      # Choose a random year between 3 and n.year-2 for each unit
+      # so there are at least 2 pre and 2 post for every timing group
+      mutate(start.year=sample(3:(params$n.year-2),1))
+  } else {
+    trt.dat <- trt.dat %>%
+      # Every units starts at the middle year (rounded up)
+      mutate(start.year=ceiling(params$n.year/2))
+  }
+  trt.dat <- trt.dat %>% 
+    mutate(start.month=treatment*(12*(start.year-1)+1),
+           start.quarter=treatment*(4*(start.year-1)+1)) %>%
+    select(unitID,treatment,start.year,start.month,start.quarter)
+  return(trt.dat)
+}
+
+trt.assignments <- function(data,params,staggered){
+  rand.trt <- assign.treatment(data,params,by.trend=F,staggered=staggered)
+  trend.trt <-  assign.treatment(data,params,by.trend=T,staggered=staggered)
+  
+  return(list('rand.trt'=rand.trt,
+              'trend.trt'=trend.trt))
+}
+
+make.data <- function(long.dat,trt.dat){
+  left_join(long.dat,trt.dat,by='unitID') %>%
+    mutate(post = (m >= start.month) & (start.month!=0),
+           posttrt=post*treatment)
+}
+
+
+single_iteration <- function(params,staggered){
   bal.data   <- generate.data(params,month.byunit=T,quarter.byunit=T,unbalanced=F)
   unbal.data <- generate.data(params,month.byunit=T,quarter.byunit=T,unbalanced=T)
   
-  if (staggered){
-    ## Randomly assign treatment to units in balanced data 
-    bal.rand.trt.dat <- bal.data %>% group_by(unitID) %>% 
-      mutate(treatment=rbinom(1,1,.5),
-             # randomly assign to one of two start groups: early (0) and late (1)
-             start.grp=rbinom(1,1,.5)) %>%
-      ungroup() %>%
-      # Early group starts at year 3, late group starts at year 4
-      mutate(start.year=treatment*ifelse(start.grp==1,3,4),
-             start.month=treatment*(params$n.month*(start.year-1)+1),
-             start.quarter=treatment*(params$n.quarter*(start.year-1)+1),
-             post = m >= start.month & start.month!=0,
-             posttrt=post*treatment)
-    
-    ## Assign treatment on the basis of pre-period trends in balanced data
-    bal.trend.trt <- bal.data %>% group_by(unitID) %>%
-      group_modify(~broom::tidy(lm(Y~year,data=.x))) %>% filter(term=="year") %>%
-      # center the slopes (i.e., ignore any overall time trend)
-      ungroup() %>% mutate(mean.slope=mean(estimate),
-                           ctr.slope=estimate-mean.slope) %>% rowwise() %>%
-      # Draw treatment assignment such that units with more positive slopes
-      # have higher probability of being treated
-      mutate(treatment=rbinom(1,1,plogis(ctr.slope)),
-             start.grp=rbinom(1,1,.5))
-    
-    bal.trend.trt.dat <- left_join(bal.data,bal.trend.trt %>%
-                                     select(unitID,treatment,start.grp),by="unitID") %>%
-      ungroup() %>%
-      mutate(start.year=treatment*ifelse(start.grp==1,3,4),
-             start.month=treatment*(params$n.month*(start.year-1)+1),
-             start.quarter=treatment*(params$n.quarter*(start.year-1)+1),
-             post = m >= start.month & start.month != 0,
-             posttrt=post*treatment)
-    
-    # Randomly assign treatment in unbalanced data
-    unbal.rand.trt.dat <- unbal.data %>% group_by(unitID) %>% 
-      mutate(treatment=rbinom(1,1,.5),
-             start.grp=rbinom(1,1,.5)) %>%
-      ungroup() %>%
-      mutate(start.year=treatment*ifelse(start.grp==1,3,4),
-             start.month=treatment*(params$n.month*(start.year-1)+1),
-             start.quarter=treatment*(params$n.quarter*(start.year-1)+1),
-             post = m >= start.month & start.month != 0,
-             posttrt=post*treatment)
-    
-    ## Assign treatment on the basis of pre-period trends in unbalanced data
-    unbal.trend.trt <- unbal.data %>% group_by(unitID) %>%
-      group_modify(~broom::tidy(lm(Y~year,data=.x))) %>% filter(term=="year") %>%
-      # center the slopes (i.e., ignore any overall time trend)
-      ungroup() %>% mutate(mean.slope=mean(estimate,na.rm=T),
-                           ctr.slope=estimate-mean.slope) %>% rowwise() %>%
-      # Draw treatment assignment such that units with more positive slopes
-      # have higher probability of being treated
-      mutate(pr.trt=ifelse(!is.na(ctr.slope),plogis(ctr.slope),.5),
-             treatment=rbinom(1,1,pr.trt),
-             start.grp=rbinom(1,1,.5))
-    
-    unbal.trend.trt.dat <- left_join(unbal.data,unbal.trend.trt %>%
-                                       select(unitID,treatment,start.grp),by="unitID") %>%
-      ungroup() %>%
-      mutate(start.year=treatment*ifelse(start.grp==1,3,4),
-             start.month=treatment*(params$n.month*(start.year-1)+1),
-             start.quarter=treatment*(params$n.quarter*(start.year-1)+1),
-             post = m >= start.month & start.month != 0,
-             posttrt=post*treatment)
-  } else {
-    ## Randomly assign treatment to units in balanced data 
-    bal.rand.trt.dat <- bal.data %>% group_by(unitID) %>% 
-      mutate(treatment=rbinom(1,1,.5)) %>%
-      ungroup() %>%
-      mutate(post=ifelse(year>params$n.year/2,1,0),
-             posttrt=post*treatment)
-    
-    ## Assign treatment on the basis of pre-period trends in balanced data
-    bal.trend.trt <- bal.data %>% group_by(unitID) %>%
-      group_modify(~broom::tidy(lm(Y~year,data=.x))) %>% filter(term=="year") %>%
-      # center the slopes (i.e., ignore any overall time trend)
-      ungroup() %>% mutate(mean.slope=mean(estimate),
-                           ctr.slope=estimate-mean.slope) %>% rowwise() %>%
-      # Draw treatment assignment such that units with more positive slopes
-      # have higher probability of being treated
-      mutate(treatment=rbinom(1,1,plogis(ctr.slope)))
-    
-    bal.trend.trt.dat <- left_join(bal.data,bal.trend.trt %>%
-                                     select(unitID,treatment),by="unitID") %>%
-      mutate(post=ifelse(year>params$n.year/2,1,0),
-             posttrt=post*treatment)
-    
-    # Randomly assign treatment in unbalanced data
-    unbal.rand.trt.dat <- unbal.data %>% group_by(unitID) %>% 
-      mutate(treatment=rbinom(1,1,.5)) %>%
-      ungroup() %>%
-      # Treatment starts at the midpoint of the timeseries
-      mutate(post=ifelse(year>params$n.year/2,1,0),
-             posttrt=post*treatment)
-    
-    ## Assign treatment on the basis of pre-period trends in unbalanced data
-    unbal.trend.trt <- unbal.data %>% group_by(unitID) %>%
-      group_modify(~broom::tidy(lm(Y~year,data=.x))) %>% filter(term=="year") %>%
-      # center the slopes (i.e., ignore any overall time trend)
-      ungroup() %>% mutate(mean.slope=mean(estimate,na.rm=T),
-                           ctr.slope=estimate-mean.slope) %>% rowwise() %>%
-      # Draw treatment assignment such that units with more positive slopes
-      # have higher probability of being treated
-      mutate(pr.trt=ifelse(!is.na(ctr.slope),plogis(ctr.slope),.5),
-             treatment=rbinom(1,1,pr.trt))
-    
-    unbal.trend.trt.dat <- left_join(unbal.data,unbal.trend.trt %>%
-                                       select(unitID,treatment),by="unitID") %>%
-      # Treatment starts at the midpoint of the timeseries
-      mutate(post=ifelse(year>params$n.year/2,1,0),
-             posttrt=post*treatment)
-  }
+  bal.trt.dat <- trt.assignments(bal.data,params,staggered=staggered)
+  unbal.trt.dat <- trt.assignments(unbal.data,params,staggered=staggered)
   
-  return(list('bal.rand.trt.dat'=bal.rand.trt.dat,
-              'bal.trend.trt.dat'=bal.trend.trt.dat,
-              'unbal.rand.trt.dat'=unbal.rand.trt.dat,
-              'unbal.trend.trt.dat'=unbal.trend.trt.dat))
-}
-
-single_iteration <- function(params,staggered){
-  all_data <- make.data(params,staggered)
-  
-  bal.rand.results <-  inject.analyze(all_data$bal.rand.trt.dat,params,staggered) %>%
+  bal.rand.results <- inject.analyze(make.data(bal.data,bal.trt.dat$rand.trt),params,staggered) %>%
     mutate(panel='balanced',assignment='random')
   
-  bal.trend.results <- inject.analyze(all_data$bal.trend.trt.dat,params,staggered) %>%
-    mutate(panel='balanced',assignment='trended')
+  #bal.trend.results <- inject.analyze(make.data(bal.data,bal.trt.dat$trend.trt),params,staggered) %>%
+  #  mutate(panel='balanced',assignment='trended')
   
-  unbal.rand.results <- inject.analyze(all_data$unbal.rand.trt.dat,params,staggered) %>%
+  unbal.rand.results <- inject.analyze(make.data(unbal.data,unbal.trt.dat$rand.trt),params,staggered) %>%
     mutate(panel='unbalanced',assignment='random')
   
-  unbal.trend.results <- inject.analyze(all_data$unbal.trend.trt.dat,params,staggered) %>%
-    mutate(panel='unbalanced',assignment='trended')
+  #unbal.trend.results <- inject.analyze(make.data(unbal.data,bal.trt.dat$trend.trt),params,staggered) %>%
+  #  mutate(panel='unbalanced',assignment='trended')
   
-  return(rbind(bal.rand.results,bal.trend.results,unbal.rand.results,unbal.trend.results))
+  return(rbind(bal.rand.results,unbal.rand.results))
 }
