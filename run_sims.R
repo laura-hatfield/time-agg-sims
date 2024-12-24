@@ -24,34 +24,32 @@ myparams <- list(
 
 
 # Simulation in parallel
-## Set this 
 nsims <- 2 
 cl <- parallel::makeCluster(2)
 doParallel::registerDoParallel(cl)
 
-#### Run simulation at scale: common adoption ####
+#### Parametric, common adoption ####
 com.results <- foreach::foreach(i = 1:nsims,.packages=c('tidyverse','estimatr','car','did'), .combine = 'rbind') %dopar% {
-  single_iteration(myparams,staggered=F) %>% mutate(iter = i)
+  single.iteration(myparams,staggered=F) %>% mutate(iter = i)
 }
 
-saveRDS(com.results, file=paste0(Sys.Date(),"_common_sim_results.rds"))
+saveRDS(com.results, file="common_sim_results.rds")
 
-
-#### Run simulation at scale: staggered adoption ####
+#### Parametric, staggered adoption ####
 stag.results <- foreach::foreach(i = 1:nsims,.packages=c('tidyverse','estimatr','car','did'), .combine = 'rbind') %dopar% {
-  single_iteration(myparams,staggered=T) %>% mutate(iter = i)
+  single.iteration(myparams,staggered=T) %>% mutate(iter = i)
 }
 
-saveRDS(stag.results, file=paste0(Sys.Date(),"_stag_sim_results.rds"))
+saveRDS(stag.results, file="stag_sim_results.rds")
 
-#### Run resampling simulation at scale: staggered adoption ####
+#### Resampling, staggered adoption ####
 load("cleaned_force_data.RData")
 
-resample.results <- foreach::foreach(i = 1:nsims,.packages=c('tidyverse','estimatr','car','did'), .combine = 'rbind') %dopar% {
+resamp.stag.results <- foreach::foreach(i = 1:nsims,.packages=c('tidyverse','estimatr','car','did'), .combine = 'rbind') %dopar% {
   resamp.dat <- resample(force.dat,n.units=50)
   # Inject treatment effects
   inject.analyze(resamp.dat,myparams,staggered=T) %>% mutate(iter=i)
 }
 
-saveRDS(resample.results,file=paste0(Sys.Date(),"_resamp_stag_sim_results.rds"))
+saveRDS(resamp.stag.results,file="resamp_stag_sim_results.rds")
 parallel::stopCluster(cl)
