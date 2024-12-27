@@ -113,32 +113,15 @@ generate.data <- function(params,
 }
 
 resample <- function(data,n.units){
-  # Randomly select (with replacement) individual units
+  # Make long data for randomly sampled (with replacement) units
   units <- unique(data$unitID)
-  these.units <- sample(units,n.units,replace=T)
-  # Randomly select (with replacement) start months from the unit-level distribution of start months
-  ## LAURA: won't this make very small groups?
-  # truncated to ensure two years of post-data for each start group
-  starts <- (data %>% group_by(unitID) %>% slice(1) %>% ungroup() %>% filter(start.year <= 4))$start.month
-  these.starts <- sample(starts,n.units,replace=T)
-  
-  sampled <- tibble('unitID'=these.units,
-                    'start.month'=these.starts,
+  sampled <- tibble('unitID'= sample(units,n.units,replace=T),
                     'newid'=1:n.units) %>% 
-    left_join(data %>% select(-c(start.month,start.quarter,start.year)),
-              by="unitID",relationship="many-to-many") %>%
-    # Recreate the start.quarter and start.year variables:
-    mutate(treatment=ifelse(start.month<4*12,1,0), # never-treated are units with start months after year 4
-           start.month=treatment*start.month,
-           start.quarter = treatment*ceiling(start.month/3),
-           start.year = treatment*ceiling(start.month/12),
-           unitID=newid,
-           post = m >= start.month & start.month!=0,
-           posttrt=post*treatment,
-           start.grp=factor(start.month)) %>%
-    select(unitID,Y,m,q,year,start.month,start.quarter,start.year,treatment,post,posttrt,start.grp)
+    left_join(data %>% select(unitID,Y,m,q,year),by="unitID",
+              relationship="many-to-many") %>% 
+    select(-unitID) %>% rename(unitID=newid)
+  return(sampled)
 }
-
 
 add.trt.effects <- function(data, tau, grp.var, time.var){
   if (grp.var){
@@ -311,7 +294,6 @@ analyze.data.CS <- function(data){
                              gname = "start.month",
                              xformla = ~1,
                              data = monthly_data,
-                             control_group="notyettreated",
                              allow_unbalanced_panel = TRUE)
   
   quarterly_DID <- did::att_gt(yname = "Y",
@@ -320,7 +302,6 @@ analyze.data.CS <- function(data){
                                gname = "start.quarter",
                                xformla = ~1,
                                data = quarterly_data,
-                               control_group="notyettreated",
                                allow_unbalanced_panel = TRUE)
   
   yearly_DID <-  did::att_gt(yname = "Y",
@@ -329,7 +310,6 @@ analyze.data.CS <- function(data){
                              gname = "start.year",
                              xformla = ~1,
                              data = yearly_data,
-                             control_group="notyettreated",
                              allow_unbalanced_panel = TRUE)
   
   # Truth by treatment timing group at each post-treatment time point
@@ -414,23 +394,22 @@ inject.analyze <- function(data,params,staggered){
 
 # returns a unit-level data frame with binary indicators for treatment
 # and start group
-assign.treatment <- function(data,params,staggered){
+assign.treatment <- function(data,starts,staggered){
   # Randomly assign treatment to each unit
-  trt.dat <- data %>% group_by(unitID) %>% slice(1) %>%
-    mutate(treatment = rbinom(1,1,0.5))
+  trt.dat <- data %>% group_by(unitID) %>% slice(1) %>% mutate(treatment = rbinom(1,1,0.5))
   if (staggered){
     trt.dat <- trt.dat %>%
-      # Choose a random year between 3 and n.year-2 for each unit
-      # so there are at least 2 pre and 2 post for every timing group
+      # Choose a random start year;
       # Untreated units have start times of 0
-      mutate(start.year=treatment*sample(3:(params$n.year-2),1),
+      mutate(start.year=treatment*sample(starts,1),
              start.month=treatment*(12*(start.year-1)+1),
              start.quarter=treatment*(4*(start.year-1)+1)) 
   } else {
+    # Choose a single random start year;
+    # untreated units still have start times (so post is defined)
+    single.start <- sample(starts,1)
     trt.dat <- trt.dat %>%
-      # Every units starts at the middle year (rounded up)
-      # and untreated units still have start times (because post is defined)
-      mutate(start.year=ceiling(params$n.year/2),
+      mutate(start.year=single.start,
              start.month=12*(start.year-1)+1,
              start.quarter=4*(start.year-1)+1)
   }
@@ -439,8 +418,6 @@ assign.treatment <- function(data,params,staggered){
   return(trt.dat)
 }
 
-
-
 make.data <- function(long.dat,trt.dat){
     left_join(long.dat,trt.dat,by='unitID') %>%
       mutate(post = (m >= start.month) & (start.month!=0),
@@ -448,12 +425,12 @@ make.data <- function(long.dat,trt.dat){
 }
 
 
-single.iteration <- function(params,staggered){
+single.iter.param <- function(params,staggered){
   bal.data   <- generate.data(params,month.byunit=T,quarter.byunit=T,unbalanced=F)
   unbal.data <- generate.data(params,month.byunit=T,quarter.byunit=T,unbalanced=T)
   
-  bal.trt.dat <- assign.treatment(bal.data,params,staggered=staggered)
-  unbal.trt.dat <- assign.treatment(unbal.data,params,staggered=staggered)
+  bal.trt.dat <- assign.treatment(bal.data,starts=3:(params$n.year-2),staggered=staggered)
+  unbal.trt.dat <- assign.treatment(unbal.data,starts=3:(params$n.year-2),staggered=staggered)
   
   bal.rand.results <- inject.analyze(make.data(bal.data,bal.trt.dat),params,staggered) %>%
     mutate(panel='balanced',assignment='random')
@@ -461,4 +438,15 @@ single.iteration <- function(params,staggered){
     mutate(panel='unbalanced',assignment='random')
   
   return(rbind(bal.rand.results,unbal.rand.results))
+}
+
+single.iter.resamp <- function(params,data,starts,staggered){
+  bal.data <- resample(data,n.units=myparams$n.units)
+  
+  bal.trt.dat <- assign.treatment(bal.data,starts=starts,staggered=staggered)
+  
+  bal.rand.results <- inject.analyze(make.data(bal.data,bal.trt.dat),params,staggered) %>%
+    mutate(panel='balanced',assignment='random')
+  
+  return(bal.rand.results)
 }
