@@ -2,3 +2,7 @@
 .Rhistory
 .RData
 .Ruserdata
+stag_sim_results.rds
+common_sim_results.rds
+resamp_com_sim_results.rds
+resamp_stag_sim_results.rds
