@@ -24,31 +24,44 @@ myparams <- list(
 
 
 # Simulation in parallel
-nsims <- 2 
-cl <- parallel::makeCluster(2)
+nsims <- 20
+cl <- parallel::makeCluster(6)
 doParallel::registerDoParallel(cl)
 
-#### Parametric, common adoption ####
-com.results <- foreach::foreach(i = 1:nsims,.packages=c('tidyverse','estimatr','car','did'), .combine = 'rbind') %dopar% {
-  single.iteration(myparams,staggered=F) %>% mutate(iter = i)
+## This one is already done
+if (F){
+  #### Parametric, common adoption ####
+  com.results <- foreach::foreach(i = 1:nsims,.packages=c('tidyverse','estimatr','car','did'), .combine = 'rbind') %dopar% {
+    single.iter.param(myparams,staggered=F) %>% mutate(iter = i)
+  }
+  
+  saveRDS(com.results, file="common_sim_results.rds")
 }
-
-saveRDS(com.results, file="common_sim_results.rds")
 
 #### Parametric, staggered adoption ####
 stag.results <- foreach::foreach(i = 1:nsims,.packages=c('tidyverse','estimatr','car','did'), .combine = 'rbind') %dopar% {
-  single.iteration(myparams,staggered=T) %>% mutate(iter = i)
+  single.iter.param(myparams,staggered=T) %>% mutate(iter = i)
 }
 
 saveRDS(stag.results, file="stag_sim_results.rds")
 
-#### Resampling, staggered adoption ####
+#### Resampling, common adoption ####
 load("cleaned_force_data.RData")
 
+resamp.com.results <- foreach::foreach(i = 1:nsims,.packages=c('tidyverse','estimatr','car','did'), .combine = 'rbind') %dopar% {
+  single.iter.resamp(myparams,force.dat,starts=3:4,staggered=F) %>% mutate(iter=i)
+}
+
+saveRDS(resamp.com.results,file="resamp_com_sim_results.rds")
+
+#### Resampling, staggered adoption ####
+# Supply the real distribution of start years (but require 2 years pre and post)
+last.start <- max(force.dat$year)-2
+starts <- (force.dat %>% group_by(unitID) %>% slice(1) %>% 
+     ungroup() %>% filter(start.year %in% 3:last.start))$start.year
+
 resamp.stag.results <- foreach::foreach(i = 1:nsims,.packages=c('tidyverse','estimatr','car','did'), .combine = 'rbind') %dopar% {
-  resamp.dat <- resample(force.dat,n.units=50)
-  # Inject treatment effects
-  inject.analyze(resamp.dat,myparams,staggered=T) %>% mutate(iter=i)
+ single.iter.resamp(myparams,force.dat,starts=starts,staggered=T) %>% mutate(iter=i)
 }
 
 saveRDS(resamp.stag.results,file="resamp_stag_sim_results.rds")
