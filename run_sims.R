@@ -24,9 +24,9 @@ myparams <- list(
 
 
 # Simulation in parallel
-nsims <- 20
-cl <- parallel::makeCluster(6)
+cl <- parallel::makeCluster(12)
 doParallel::registerDoParallel(cl)
+nsims <- 2000
 
 ## This one is already done
 if (F){
@@ -44,6 +44,7 @@ stag.results <- foreach::foreach(i = 1:nsims,.packages=c('tidyverse','estimatr',
 }
 
 saveRDS(stag.results, file="stag_sim_results.rds")
+rm(stag.results); gc()
 
 #### Resampling, common adoption ####
 load("cleaned_force_data.RData")
@@ -53,6 +54,7 @@ resamp.com.results <- foreach::foreach(i = 1:nsims,.packages=c('tidyverse','esti
 }
 
 saveRDS(resamp.com.results,file="resamp_com_sim_results.rds")
+rm(resamp.com.results);gc()
 
 #### Resampling, staggered adoption ####
 # Supply the real distribution of start years (but require 2 years pre and post)
@@ -65,4 +67,6 @@ resamp.stag.results <- foreach::foreach(i = 1:nsims,.packages=c('tidyverse','est
 }
 
 saveRDS(resamp.stag.results,file="resamp_stag_sim_results.rds")
+rm(resamp.stag.results); gc()
+
 parallel::stopCluster(cl)
