@@ -72,31 +72,69 @@ process_results_stag <- function(results){
   return(list('est'=stag.est.summaries))
 }
 
-score_model_winners <- function(summaries){
-    test_perf <- summaries$test %>% 
-      select(panel,assignment,trteff,estimand,agg,model,name,power,t1e) %>%
-      mutate(name=ifelse(name=="Joint F","JointF",name)) %>%
-      pivot_wider(names_from=name,values_from=c(power,t1e),names_sep=".") %>%
-      pivot_longer(cols=c(power.Trend,power.Individual,power.JointF,
-                          t1e.Trend,t1e.Individual,t1e.JointF),names_to="metric")
-
-
+score_model_perf <- function(summaries){
+  test_perf <- summaries$test %>% 
+    select(panel,assignment,trteff,estimand,agg,model,name,power,t1e) %>%
+    mutate(name=ifelse(name=="Joint F","JointF",name),
+           truth=NA) %>%
+    pivot_wider(names_from=name,values_from=c(power,t1e),names_sep=".") %>%
+    pivot_longer(cols=c(power.Trend,power.Individual,power.JointF,
+                        t1e.Trend,t1e.Individual,t1e.JointF),names_to="metric")
+  
   est_perf <- summaries$est %>% 
-    select(panel,assignment,trteff,estimand,agg,model,covers,bias,len.ci,rmse,mc.sd) %>%
+    select(panel,assignment,trteff,estimand,agg,model,truth,covers,bias,len.ci,rmse,mc.sd) %>%
     pivot_longer(cols=c(covers,bias,len.ci,rmse,mc.sd),names_to="metric")
   
   perf <-  bind_rows(test_perf,est_perf)
   
-  # this scores models, not time aggregation levels 
+  # this scores models at each aggregation level
   scored_perf <- perf %>%
-    arrange(panel,assignment,trteff,estimand,metric,agg,abs(value)) %>%
-    group_by(panel,assignment,trteff,estimand,metric,agg) %>%
+    arrange(panel,assignment,trteff,estimand,metric,agg,truth,abs(value)) %>%
+    group_by(panel,assignment,trteff,estimand,metric,agg,truth) %>%
     # Find the best-performing level: for these, last is best
     mutate(best=ifelse(metric%in%c('covers','power.Individual','power.JointF','power.Trend'),last(value,na_rm=TRUE),
                        # For the rest, first is best
                        first(value,na_rm=TRUE))) %>% ungroup() %>%
-    # Use pct.decrement instead of winingness for colors in plots
-    mutate(pct.decrement=ifelse(best!=0,abs(abs(value)-abs(best))/abs(best),abs(abs(value)-abs(best))),
+    # Scale the difference in units of the treatment effect if not already bounded
+    mutate(decrement=ifelse((metric%in%c('bias','rmse','len.ci','mc.sd'))&(trteff!="null"),abs(abs(value)-abs(best))/abs(truth),abs(abs(value)-abs(best))),
+           label=factor(metric,levels=c('mc.sd','bias','rmse','len.ci','covers',
+                                        'power.Individual','power.JointF','power.Trend',
+                                        't1e.Individual','t1e.JointF','t1e.Trend'),
+                        labels=c('MC SD','Bias','RMSE','CI Length','Coverage',
+                                 'Power (indiv)','Power (joint)','Power (trend)',
+                                 'Alpha (indiv)','Alpha (joint)','Alpha (trend)')))
+  return(scored_perf)
+}
+
+score_agg_perf <- function(summaries,staggered){
+  est_perf <- summaries$est %>% 
+    select(panel,assignment,trteff,estimand,agg,model,truth,covers,bias,len.ci,rmse,mc.sd) %>%
+    pivot_longer(cols=c(covers,bias,len.ci,rmse,mc.sd),names_to="metric")
+  
+  if (!staggered){
+    # Only look at the models with unit FE
+    est_perf <- filter(est_perf,model=="0")
+    
+    test_perf <- summaries$test %>% filter(model=="0") %>%
+      select(panel,assignment,trteff,estimand,agg,model,name,power,t1e) %>%
+      mutate(name=ifelse(name=="Joint F","JointF",name),
+             truth=NA) %>%
+      pivot_wider(names_from=name,values_from=c(power,t1e),names_sep=".") %>%
+      pivot_longer(cols=c(power.Trend,power.Individual,power.JointF,
+                          t1e.Trend,t1e.Individual,t1e.JointF),names_to="metric")
+    
+    perf <-  bind_rows(test_perf,est_perf)
+  } else perf <- est_perf
+  
+  scored_perf <- perf %>%
+    arrange(panel,assignment,trteff,estimand,metric,truth,abs(value)) %>%
+    group_by(panel,assignment,trteff,estimand,metric,truth) %>%
+    # Find the best-performing level: for these, last is best
+    mutate(best=ifelse(metric%in%c('covers','power.Individual','power.JointF','power.Trend'),last(value,na_rm=TRUE),
+                       # For the rest, first is best
+                       first(value,na_rm=TRUE))) %>% ungroup() %>%
+    # Scale the difference in units of the treatment effect if not already bounded
+    mutate(decrement=ifelse((metric%in%c('bias','rmse','len.ci','mc.sd'))&(trteff!="null"),abs(abs(value)-abs(best))/abs(truth),abs(abs(value)-abs(best))),
            label=factor(metric,levels=c('mc.sd','bias','rmse','len.ci','covers',
                                         'power.Individual','power.JointF','power.Trend',
                                         't1e.Individual','t1e.JointF','t1e.Trend'),

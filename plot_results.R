@@ -28,32 +28,86 @@ if (F){
 ## Just load the summaries of the simulation results
 load("common_sim_summaries.RData")
 
-com_winners <- score_model_winners(com.summaries)
+com_mod_perf <- score_model_perf(com.summaries)
 
-ggplot(filter(com_winners,panel=="balanced",estimand=="Overall",!is.na(value)),aes(x=model,y=label)) +
-  geom_tile(aes(fill=pct.decrement)) + geom_text(aes(label=signif(value,2),col=pct.decrement)) + 
-  scale_color_gradient(low='white',high='black',guide="none") +
-  scale_fill_gradient(low='#762a83',high='white') +
+ggplot(filter(com_mod_perf,panel=="balanced",estimand=="Overall",!is.na(value)),aes(x=model,y=label)) +
+  geom_tile(aes(fill=decrement)) + geom_text(aes(label=signif(value,2),col=decrement)) + 
+  scale_color_gradient(low='white',high='black',guide="none",limits=c(0,.25),oob=scales::squish) +
+  scale_fill_gradient(low='#762a83',high='white',limits=c(0,1),oob=scales::squish) +
   facet_grid(trteff~agg,scale="free") + xlab("") + ylab("") +
   theme(axis.text.x = element_text(angle=45,hjust=1))
 
-ggplot(filter(com_winners,panel=="unbalanced",estimand=="Overall",!is.na(value)),aes(x=model,y=label)) +
-  geom_tile(aes(fill=pct.decrement)) + geom_text(aes(label=signif(value,2),col=pct.decrement)) + 
-  scale_color_gradient(low='white',high='black',guide="none") +
-  scale_fill_gradient(low='#762a83',high='white') +
+ggplot(filter(com_mod_perf,panel=="unbalanced",estimand=="Overall",!is.na(value)),aes(x=model,y=label)) +
+  geom_tile(aes(fill=decrement)) + geom_text(aes(label=signif(value,2),col=decrement)) + 
+  scale_color_gradient(low='white',high='black',guide="none",limits=c(0,.25),oob=scales::squish) +
+  scale_fill_gradient(low='#762a83',high='white',limits=c(0,1),oob=scales::squish) +
   facet_grid(trteff~agg,scale="free") + xlab("") + ylab("") +
   theme(axis.text.x = element_text(angle=45,hjust=1))
 
-ggplot(filter(com_winners,panel=="balanced",estimand=="Time-varying",!is.na(value)),aes(x=model,y=label)) +
-  geom_tile(aes(fill=pct.decrement)) + geom_text(aes(label=signif(value,2),col=pct.decrement)) + 
-  scale_color_gradient(low='white',high='black',guide="none") +
-  scale_fill_gradient(low='#762a83',high='white') +
+ggplot(filter(com_mod_perf,panel=="balanced",estimand=="Time-varying",!is.na(value)),aes(x=model,y=label)) +
+  geom_tile(aes(fill=decrement)) + geom_text(aes(label=signif(value,2),col=decrement)) + 
+  scale_color_gradient(low='white',high='black',guide="none",limits=c(0,.25),oob=scales::squish) +
+  scale_fill_gradient(low='#762a83',high='white',limits=c(0,1),oob=scales::squish) +
   facet_grid(trteff~agg,scale="free") + xlab("") + ylab("") +
   theme(axis.text.x = element_text(angle=45,hjust=1))
 
-ggplot(filter(com_winners,panel=="unbalanced",estimand=="Time-varying",!is.na(value)),aes(x=model,y=label)) +
-  geom_tile(aes(fill=pct.decrement)) + geom_text(aes(label=signif(value,2),col=pct.decrement)) + 
-  scale_color_gradient(low='white',high='black',guide="none") +
-  scale_fill_gradient(low='#762a83',high='white') +
+ggplot(filter(com_mod_perf,panel=="unbalanced",estimand=="Time-varying",!is.na(value)),aes(x=model,y=label)) +
+  geom_tile(aes(fill=decrement)) + geom_text(aes(label=signif(value,2),col=decrement)) + 
+  scale_color_gradient(low='white',high='black',guide="none",limits=c(0,.25),oob=scales::squish) +
+  scale_fill_gradient(low='#762a83',high='white',limits=c(0,1),oob=scales::squish) +
   facet_grid(trteff~agg,scale="free") + xlab("") + ylab("") +
+  theme(axis.text.x = element_text(angle=45,hjust=1))
+
+
+com_agg_perf <- score_agg_perf(com.summaries,staggered=F)
+
+ggplot(filter(com_agg_perf,estimand=="Overall",!is.na(value)),aes(x=agg,y=label)) +
+  geom_tile(aes(fill=decrement)) + geom_text(aes(label=signif(value,2),col=decrement)) + 
+  scale_color_gradient(low='white',high='black',guide="none",limits=c(0,.25),oob=scales::squish) +
+  scale_fill_gradient(low='#762a83',high='white',limits=c(0,1),oob=scales::squish) +
+  facet_grid(trteff~panel,scale="free_y") + xlab("") + ylab("") +
+  theme(axis.text.x = element_text(angle=45,hjust=1))
+
+ggplot(filter(com_agg_perf,estimand=="Time-varying",!is.na(value)),aes(x=agg,y=label)) +
+  geom_tile(aes(fill=decrement)) + geom_text(aes(label=signif(value,2),col=decrement)) + 
+  scale_color_gradient(low='white',high='black',guide="none",limits=c(0,.25),oob=scales::squish) +
+  scale_fill_gradient(low='#762a83',high='white',limits=c(0,1),oob=scales::squish) +
+  facet_grid(trteff~panel,scale="free_y") + xlab("") + ylab("") +
+  theme(axis.text.x = element_text(angle=45,hjust=1))
+
+load("stag_sim_summaries.RData")
+
+stag_agg_perf <- score_agg_perf(stag.summaries,staggered=T)
+
+ggplot(filter(stag_agg_perf,estimand=="Overall",!is.na(value)),aes(x=agg,y=label)) +
+  geom_tile(aes(fill=decrement)) + geom_text(aes(label=signif(value,2),col=decrement)) + 
+  scale_color_gradient(low='white',high='black',guide="none",limits=c(0,.25),oob=scales::squish) +
+  scale_fill_gradient(low='#762a83',high='white',limits=c(0,1),oob=scales::squish) +
+  facet_grid(trteff~panel,scale="free_y") + xlab("") + ylab("") +
+  theme(axis.text.x = element_text(angle=45,hjust=1))
+
+ggplot(filter(stag_agg_perf,estimand=="Time-varying",!is.na(value)),aes(x=agg,y=label)) +
+  geom_tile(aes(fill=decrement)) + geom_text(aes(label=signif(value,2),col=decrement)) + 
+  scale_color_gradient(low='white',high='black',guide="none",limits=c(0,.25),oob=scales::squish) +
+  scale_fill_gradient(low='#762a83',high='white',limits=c(0,1),oob=scales::squish) +
+  facet_grid(trteff~panel,scale="free_y") + xlab("") + ylab("") +
+  theme(axis.text.x = element_text(angle=45,hjust=1))
+
+
+load("resamp_com_sim_summaries.RData")
+
+resamp_com_agg_perf <- score_agg_perf(resamp.com.summaries,staggered=F)
+
+ggplot(filter(resamp_com_agg_perf,estimand=="Overall",!is.na(value)),aes(x=agg,y=label)) +
+  geom_tile(aes(fill=decrement)) + geom_text(aes(label=signif(value,2),col=decrement)) + 
+  scale_color_gradient(low='white',high='black',guide="none",limits=c(0,.25),oob=scales::squish) +
+  scale_fill_gradient(low='#762a83',high='white',limits=c(0,1),oob=scales::squish) +
+  facet_grid(trteff~panel,scale="free_y") + xlab("") + ylab("") +
+  theme(axis.text.x = element_text(angle=45,hjust=1))
+
+ggplot(filter(resamp_com_agg_perf,estimand=="Time-varying",!is.na(value)),aes(x=agg,y=label)) +
+  geom_tile(aes(fill=decrement)) + geom_text(aes(label=signif(value,2),col=decrement)) + 
+  scale_color_gradient(low='white',high='black',guide="none",limits=c(0,.25),oob=scales::squish) +
+  scale_fill_gradient(low='#762a83',high='white',limits=c(0,1),oob=scales::squish) +
+  facet_grid(trteff~panel,scale="free_y") + xlab("") + ylab("") +
   theme(axis.text.x = element_text(angle=45,hjust=1))
