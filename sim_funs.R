@@ -112,7 +112,7 @@ generate.data <- function(params,
   return(data %>% select(unitID, Y, m, q, year))
 }
 
-resample <- function(data,n.units){
+resample <- function(data,n.units,starts,unbalanced){
   # Make long data for randomly sampled (with replacement) units
   units <- unique(data$unitID)
   sampled <- tibble('unitID'= sample(units,n.units,replace=T),
@@ -120,6 +120,20 @@ resample <- function(data,n.units){
     left_join(data %>% select(unitID,Y,m,q,year),by="unitID",
               relationship="many-to-many") %>% 
     select(-unitID) %>% rename(unitID=newid)
+  if (unbalanced){
+    # For each unit, draw a random first month (with prob = 0.5) 
+    # and last month (with prob = 0.5)
+    first.months <- 1:((min(starts)*12)-1)
+    end.month <- max(sampled$year)*12
+    last.months <- ((max(starts)*12)+1):end.month
+    sampled <- sampled %>% group_by(unitID) %>% 
+      mutate(trunc.begin=rbinom(1,1,.5),
+             first.month=ifelse(trunc.begin,sample(first.months,1),1),
+             trunc.end=rbinom(1,1,.5),
+             last.month=ifelse(trunc.end,sample(last.months,1),end.month)) %>%
+      ungroup() %>% filter((m>=first.month) & (m<=last.month)) %>%
+      select(unitID,Y,m,q,year)
+  }
   return(sampled)
 }
 
@@ -441,12 +455,16 @@ single.iter.param <- function(params,staggered){
 }
 
 single.iter.resamp <- function(params,data,starts,staggered){
-  bal.data <- resample(data,n.units=myparams$n.units)
+  bal.data <- resample(data,n.units=myparams$n.units,starts,unbalanced=F)
+  unbal.data <- resample(data,n.units=myparams$n.units,starts,unbalanced=T) 
   
   bal.trt.dat <- assign.treatment(bal.data,starts=starts,staggered=staggered)
+  unbal.trt.dat <- assign.treatment(unbal.data,starts=starts,staggered=staggered)
   
   bal.rand.results <- inject.analyze(make.data(bal.data,bal.trt.dat),params,staggered) %>%
     mutate(panel='balanced',assignment='random')
+  unbal.rand.results <- inject.analyze(make.data(unbal.data,unbla.trt.dat),params,staggered) %>%
+    mutate(panel="unbalanced",assignment="random")
   
-  return(bal.rand.results)
+  return(rbind(bal.rand.results,unbla.rand.results))
 }

@@ -72,7 +72,7 @@ process_results_stag <- function(results){
   return(list('est'=stag.est.summaries))
 }
 
-score_model_perf <- function(summaries){
+score_mod_perf <- function(summaries){
   test_perf <- summaries$test %>% 
     select(panel,assignment,trteff,estimand,agg,model,name,power,t1e) %>%
     mutate(name=ifelse(name=="Joint F","JointF",name),
@@ -133,15 +133,49 @@ score_agg_perf <- function(summaries,staggered){
     mutate(best=ifelse(metric%in%c('covers','power.Individual','power.JointF','power.Trend'),last(value,na_rm=TRUE),
                        # For the rest, first is best
                        first(value,na_rm=TRUE))) %>% ungroup() %>%
-    # Scale the difference in units of the treatment effect if not already bounded
-    mutate(decrement=ifelse((metric%in%c('bias','rmse','len.ci','mc.sd'))&(trteff!="null"),abs(abs(value)-abs(best))/abs(truth),abs(abs(value)-abs(best))),
-           label=factor(metric,levels=c('mc.sd','bias','rmse','len.ci','covers',
+    mutate(scale=ifelse(metric%in%c('bias','rmse','len.ci','mc.sd'),"Trt eff","Prop"),
+           # Scale the difference in units of the treatment effect
+           decrement=ifelse((scale=="Trt eff")&(trteff!="null"),abs(abs(value)-abs(best))/abs(truth),
+                            # Or as absolute difference if truth is 0 or on scale of proportions
+                            abs(abs(value)-abs(best))),
+           label=factor(metric,levels=c('bias','rmse','len.ci','mc.sd',
+                                        'covers',
                                         'power.Individual','power.JointF','power.Trend',
                                         't1e.Individual','t1e.JointF','t1e.Trend'),
-                        labels=c('MC SD','Bias','RMSE','CI Length','Coverage',
+                        labels=c('Bias','RMSE','CI Length','MC SD',
+                                 'Coverage',
                                  'Power (indiv)','Power (joint)','Power (trend)',
                                  'Alpha (indiv)','Alpha (joint)','Alpha (trend)')))
   return(scored_perf)
+}
+
+plot_mod_perf <- function(perf_dat){
+  panel <- c('balanced','unbalanced')
+  estimand <- c('Overall','Time-varying')
+  combos <- expand.grid('panel'=panel,'estimand'=estimand)  
+  for (i in 1:dim(combos)[1]){
+    p1 <- ggplot(filter(perf_dat,panel==combos[i,'panel'],estimand==combos[i,'estimand'],
+                  !is.na(value)),aes(x=model,y=label)) +
+      geom_tile(aes(fill=decrement)) + geom_text(aes(label=signif(value,2),col=decrement>0.1)) + 
+      scale_color_manual(values=c('FALSE'='white','TRUE'='black'),guide="none") +
+      scale_fill_gradient(low='#762a83',high='white',limits=c(0,1),oob=scales::squish) +
+      facet_grid(trteff~agg,scale="free") + xlab("") + ylab("") +
+      theme(axis.text.x = element_text(angle=45,hjust=1))
+    print(p1)
+  }
+}
+
+plot_agg_perf <- function(perf_dat){
+  estimand <- c('Overall','Time-varying')
+  for (i in 1:2){
+    p1 <- ggplot(filter(perf_dat,estimand==estimand[i],!is.na(value)),aes(x=agg,y=label)) +
+      geom_tile(aes(fill=decrement)) + geom_text(aes(label=signif(value,2),col=decrement)) + 
+      scale_color_gradient(low='white',high='black',guide="none",limits=c(0,.25),oob=scales::squish) +
+      scale_fill_gradient(low='#762a83',high='white',limits=c(0,1),oob=scales::squish) +
+      facet_grid(trteff~panel,scale="free_y") + xlab("") + ylab("") +
+      theme(axis.text.x = element_text(angle=45,hjust=1))  
+    print(p1)
+  }
 }
 
 
