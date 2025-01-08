@@ -463,8 +463,8 @@ single.iter.resamp <- function(params,data,starts,staggered){
   
   bal.rand.results <- inject.analyze(make.data(bal.data,bal.trt.dat),params,staggered) %>%
     mutate(panel='balanced',assignment='random')
-  unbal.rand.results <- inject.analyze(make.data(unbal.data,unbla.trt.dat),params,staggered) %>%
+  unbal.rand.results <- inject.analyze(make.data(unbal.data,unbal.trt.dat),params,staggered) %>%
     mutate(panel="unbalanced",assignment="random")
   
-  return(rbind(bal.rand.results,unbla.rand.results))
+  return(rbind(bal.rand.results,unbal.rand.results))
 }

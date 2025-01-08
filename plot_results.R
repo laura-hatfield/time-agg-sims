@@ -30,26 +30,26 @@ load("common_sim_summaries.RData")
 
 # Performance of different models
 com_mod_perf <- score_mod_perf(com.summaries)
-plot_mod_perf(com_mod_perf)
+plot_mod_perf(com_mod_perf,save.prefix="com_param")
 
 # Performance of different time aggregations
 com_agg_perf <- score_agg_perf(com.summaries,staggered=F)
-plot_agg_perf(com_agg_perf)
+plot_agg_perf(com_agg_perf,save.prefix="com_param")
 
 #### Staggered, parametric ####
 load("stag_sim_summaries.RData")
 
 stag_agg_perf <- score_agg_perf(stag.summaries,staggered=T)
-plot_agg_perf(stag_agg_perf)
+plot_agg_perf(stag_agg_perf,save.prefix="stag_param")
 
 #### Common, resampling ####
 load("resamp_com_sim_summaries.RData")
 
 resamp_com_mod_perf <- score_mod_perf(resamp.com.summaries)
-plot_mod_perf(resamp_com_mod_perf)
+plot_mod_perf(resamp_com_mod_perf,save.prefix="com_resamp")
 
 resamp_com_agg_perf <- score_agg_perf(resamp.com.summaries,staggered=F)
-plot_agg_perf(resamp_com_agg_perf)
+plot_agg_perf(resamp_com_agg_perf,save.prefix="comp_resamp")
 
 
 #### Staggered, resampling ####
