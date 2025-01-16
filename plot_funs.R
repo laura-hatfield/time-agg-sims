@@ -87,8 +87,8 @@ score_mod_perf <- function(summaries){
   
   # this scores models at each aggregation level
   scored_perf <- perf %>%
-    arrange(panel,assignment,trteff,estimand,metric,agg,truth,abs(value)) %>%
-    group_by(panel,assignment,trteff,estimand,metric,agg,truth) %>%
+    arrange(panel,assignment,trteff,estimand,metric,agg,abs(value)) %>%
+    group_by(panel,assignment,trteff,estimand,metric,agg) %>%
     # Find the best-performing level: for these, last is best
     mutate(best=ifelse(metric%in%c('covers','power.Individual','power.JointF','power.Trend'),last(value,na_rm=TRUE),
                        # For the rest, first is best
@@ -122,20 +122,24 @@ score_agg_perf <- function(summaries,staggered){
                           t1e.Trend,t1e.Individual,t1e.JointF),names_to="metric")
     
     perf <-  bind_rows(test_perf,est_perf)
-  } else perf <- est_perf
-  
+  } else {
+    test_perf <- summaries$est %>% 
+      select(panel,assignment,trteff,estimand,agg,model,power,t1e) %>%
+      rename(power.Individual=power,t1e.Individual=t1e) %>%
+      pivot_longer(cols=c(power.Individual,t1e.Individual),names_to="metric")
+    perf <- bind_rows(test_perf,est_perf)
+  }
   scored_perf <- perf %>%
-    arrange(panel,assignment,trteff,estimand,metric,truth,abs(value)) %>%
-    group_by(panel,assignment,trteff,estimand,metric,truth) %>%
+    arrange(panel,assignment,trteff,estimand,metric,abs(value)) %>%
+    group_by(panel,assignment,trteff,estimand,metric) %>%
     # Find the best-performing level: for these, last is best
-    mutate(best=ifelse(metric%in%c('covers','power.Individual','power.JointF','power.Trend'),last(value,na_rm=TRUE),
+    mutate(best=ifelse(metric%in%c('covers','power.Individual','power.JointF','power.Trend'),
+                       last(value,na_rm=TRUE),
                        # For the rest, first is best
                        first(value,na_rm=TRUE))) %>% ungroup() %>%
     mutate(scale=ifelse(metric%in%c('bias','rmse','se','mc.sd'),"Trt eff","Prop"),
            # Scale the difference in units of the treatment effect
-           decrement=ifelse((scale=="Trt eff")&(trteff!="null"),abs(abs(value)-abs(best))/abs(truth),
-                            # Or as absolute difference if truth is 0 or on scale of proportions
-                            abs(abs(value)-abs(best))),
+           decrement=abs(abs(value)-abs(best)),
            label=factor(metric,levels=c('bias','mc.sd','rmse','se','covers',
                                         'power.Individual','power.JointF','power.Trend',
                                         't1e.Individual','t1e.JointF','t1e.Trend'),
