@@ -161,7 +161,7 @@ plot_mod_perf <- function(perf_dat,save.prefix){
       scale_fill_gradient(low='#762a83',high='white',limits=c(0,1),oob=scales::squish,guide="none") +
       facet_grid(trteff~agg,scale="free") + xlab("") + ylab("") +
       theme(axis.text.x = element_text(angle=45,hjust=1))
-    ggsave(p1,file=paste0(c(paste0(c('mod',save.prefix,as.character(combos[i,'panel']),
+    ggsave(p1,file=paste0(c(paste0(c(save.prefix,'mod',as.character(combos[i,'panel']),
                             as.character(combos[i,'estimand'])),collapse="_"),".png"),collapse=""),
            width=6.5,height=9)
   }
@@ -176,9 +176,63 @@ plot_agg_perf <- function(perf_dat,save.prefix){
       scale_fill_gradient(low='#762a83',high='white',limits=c(0,1),oob=scales::squish,guide="none") +
       facet_grid(trteff~panel,scale="free_y") + xlab("") + ylab("") +
       theme(axis.text.x = element_text(angle=45,hjust=1))  
-    ggsave(p1,file=paste0(c(paste0(c('agg',save.prefix,as.character(this.est[i])),collapse="_"),".png"),collapse=""),
+    ggsave(p1,file=paste0(c(paste0(c(save.prefix,'agg',as.character(this.est[i])),collapse="_"),".png"),collapse=""),
            width=6.5,height=9)
   }
 }
+
+agg_truth <- function(data,params,staggered){
+  cons.data <- add.trt.effects(data,tau=params$tau,grp.var = F, time.var = F)
+  tv.data   <- add.trt.effects(data,tau=params$tau,grp.var = F, time.var = T)
+  gv.data   <- add.trt.effects(data,tau=params$tau,grp.var = T, time.var = F)
+  gtv.data  <- add.trt.effects(data,tau=params$tau,grp.var = T, time.var = T)
+  
+  if (staggered){
+    cons.agg <- agg.data.staggered(cons.data,is.gv=F)
+    tv.agg <- agg.data.staggered(tv.data,is.gv=F)
+    gv.agg <- agg.data.staggered(gv.data,is.gv=T)
+    gtv.agg <- agg.data.staggered(gtv.data,is.gv=T)
+    truth <- bind_rows(cons.agg$month_true %>% mutate(start.year=ceiling(start.month/12)),cons.agg$quarter_true %>% mutate(start.year=ceiling(start.quarter/4)),cons.agg$year_true) %>% 
+      mutate(trteff="constant",grp=1) %>% select(-start.month,-start.quarter) %>%
+      bind_rows(bind_rows(tv.agg$month_true %>% mutate(start.year=ceiling(start.month/12)),tv.agg$quarter_true %>% mutate(start.year=ceiling(start.quarter/4)),tv.agg$year_true) %>% 
+                  mutate(trteff="time-varying",grp=1) %>% select(-start.month,-start.quarter)) %>%
+      bind_rows(bind_rows(gv.agg$month_true %>% mutate(start.year=ceiling(start.month/12)),gv.agg$quarter_true %>% mutate(start.year=ceiling(start.quarter/4)),gv.agg$year_true) %>% 
+                  mutate(trteff="group-varying") %>% select(-start.month,-start.quarter)) %>%
+      bind_rows(bind_rows(gtv.agg$month_true %>% mutate(start.year=ceiling(start.month/12)),gtv.agg$quarter_true %>% mutate(start.year=ceiling(start.quarter/4)),gtv.agg$year_true) %>% 
+                  mutate(trteff="group- and time-varying")  %>% select(-start.month,-start.quarter))
+  } else {
+    cons.agg <- agg.data.common(cons.data,is.tv=T,is.gv=F)
+    tv.agg <- agg.data.common(tv.data,is.tv=T,is.gv=F)
+    gv.agg <- agg.data.common(gv.data,is.tv=T,is.gv=T)
+    gtv.agg <- agg.data.common(gtv.data,is.tv=T,is.gv=T)
+    truth <- bind_rows(cons.agg$month_true,cons.agg$quarter_true,cons.agg$year_true) %>% mutate(trteff="constant",grp=1) %>%
+      bind_rows(bind_rows(tv.agg$month_true,tv.agg$quarter_true,tv.agg$year_true) %>% mutate(trteff="time-varying",grp=1)) %>%
+      bind_rows(bind_rows(gv.agg$month_true,gv.agg$quarter_true,gv.agg$year_true) %>% mutate(trteff="group-varying")) %>%
+      bind_rows(bind_rows(gtv.agg$month_true,gtv.agg$quarter_true,gtv.agg$year_true) %>% mutate(trteff="group- and time-varying"))
+  }
+  return(truth)
+}
+
+plot_truth <- function(params,data,starts,resample=F,staggered=F){
+  if (resample){
+    bal.data <- resample(data,n.units=myparams$n.units,starts,unbalanced=F) 
+    unbal.data <- resample(data,n.units=params$n.units,starts,unbalanced=T)
+  } else {
+    bal.data   <- generate.data(params,month.byunit=T,quarter.byunit=T,unbalanced=F)
+    unbal.data <- generate.data(params,month.byunit=T,quarter.byunit=T,unbalanced=T)
+  }
+  bal.trt.dat <- assign.treatment(bal.data,starts=starts,staggered=staggered)
+  bal.truth <- agg_truth(make.data(bal.data,bal.trt.dat),params,staggered) %>% mutate(panel="balanced")
+
+  unbal.trt.dat <- assign.treatment(unbal.data,starts=starts,staggered)
+  unbal.truth <- agg_truth(make.data(unbal.data,unbal.trt.dat),params,staggered) %>% mutate(panel="unbalanced")
+  
+  truth <- bind_rows(bal.truth,unbal.truth) %>%
+    mutate(grp=factor(grp),
+           trteff=factor(trteff,levels=c('constant','time-varying','group-varying','group- and time-varying')))
+  return(truth)
+}
+
+
 
 

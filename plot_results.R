@@ -31,33 +31,32 @@ load("common_sim_summaries.RData")
 
 # Performance of different models
 com_mod_perf <- score_mod_perf(com.summaries)
-plot_mod_perf(com_mod_perf,save.prefix="com_param")
+plot_mod_perf(com_mod_perf,save.prefix="figures/com_param")
 
 # Performance of different time aggregations
 com_agg_perf <- score_agg_perf(com.summaries,staggered=F)
-plot_agg_perf(com_agg_perf,save.prefix="com_param")
+plot_agg_perf(com_agg_perf,save.prefix="figures/com_param")
 
 #### Staggered, parametric ####
 load("stag_sim_summaries.RData")
 
 stag_agg_perf <- score_agg_perf(stag.summaries,staggered=T)
-plot_agg_perf(stag_agg_perf,save.prefix="stag_param")
+plot_agg_perf(stag_agg_perf,save.prefix="figures/stag_param")
 
 #### Common, resampling ####
 load("resamp_com_sim_summaries.RData")
 
 resamp_com_mod_perf <- score_mod_perf(resamp.com.summaries)
-plot_mod_perf(resamp_com_mod_perf,save.prefix="com_resamp")
+plot_mod_perf(resamp_com_mod_perf,save.prefix="figures/com_resamp")
 
 resamp_com_agg_perf <- score_agg_perf(resamp.com.summaries,staggered=F)
-plot_agg_perf(resamp_com_agg_perf,save.prefix="com_resamp")
-
+plot_agg_perf(resamp_com_agg_perf,save.prefix="figures/com_resamp")
 
 #### Staggered, resampling ####
 load("resamp_stag_sim_summaries.RData")
 
 resamp_stag_agg_perf <- score_agg_perf(resamp.stag.summaries,staggered=T)
-plot_agg_perf(resamp_stag_agg_perf,save.prefix="stag_resamp")
+plot_agg_perf(resamp_stag_agg_perf,save.prefix="figures/stag_resamp")
 
 ## Plot the true treatment effects:
 myparams <- list(
@@ -68,68 +67,39 @@ myparams <- list(
   const = 0,   # Overall (non-stationary) trend of month effect
   # sigma_month is the white noise
   sigma_month = 1,
-  
   # Cons Treatment effect 
   tau = 3)
 
-bal.data   <- generate.data(myparams,month.byunit=T,quarter.byunit=T,unbalanced=F)
-bal.trt.dat <- assign.treatment(bal.data,starts=4,staggered=F)
-these.bal <- make.data(bal.data,bal.trt.dat)
-
-cons.data <- add.trt.effects(these.bal,tau=myparams$tau,grp.var = F, time.var = F)
-cons.agg <- agg.data.common(cons.data,is.tv=T,is.gv=F)
-
-tv.data   <- add.trt.effects(these.bal,tau=myparams$tau,grp.var = F, time.var = T)
-tv.agg <- agg.data.common(tv.data,is.tv=T,is.gv=F)
-
-gv.data   <- add.trt.effects(these.bal,tau=myparams$tau,grp.var = T, time.var = F)
-gv.agg <- agg.data.common(gv.data,is.tv=T,is.gv=T)
-
-gtv.data  <- add.trt.effects(these.bal,tau=myparams$tau,grp.var = T, time.var = T)
-gtv.agg <- agg.data.common(gtv.data,is.tv=T,is.gv=T)
-
-bal.truth <- bind_rows(cons.agg$month_true %>% mutate(agg="month"),cons.agg$quarter_true %>% mutate(agg="quarter"),cons.agg$year_true %>% mutate(agg="year")) %>% mutate(trteff="constant",grp=1) %>%
-  bind_rows(bind_rows(tv.agg$month_true %>% mutate(agg="month"),tv.agg$quarter_true %>% mutate(agg="quarter"),tv.agg$year_true %>% mutate(agg="year")) %>% mutate(trteff="time-varying",grp=1)) %>%
-  bind_rows(bind_rows(gv.agg$month_true %>% mutate(agg="month"),gv.agg$quarter_true %>% mutate(agg="quarter"),gv.agg$year_true %>% mutate(agg="year")) %>% mutate(trteff="group-varying")) %>%
-  bind_rows(bind_rows(gtv.agg$month_true %>% mutate(agg="month"),gtv.agg$quarter_true %>% mutate(agg="quarter"),gtv.agg$year_true %>% mutate(agg="year")) %>% mutate(trteff="group- and time-varying")) %>%
-  mutate(panel="balanced")
-rm(cons.data,tv.data,tv.agg,gv.agg,gtv.agg)
-
-unbal.data <- generate.data(myparams,month.byunit=T,quarter.byunit=T,unbalanced=T)
-unbal.trt.dat <- assign.treatment(unbal.data,starts=4,staggered=F)
-these.unbal <- make.data(unbal.data,unbal.trt.dat)
-
-cons.data <- add.trt.effects(these.unbal,tau=myparams$tau,grp.var = F, time.var = F)
-cons.agg <- agg.data.common(cons.data,is.tv=T,is.gv=F)
-
-tv.data   <- add.trt.effects(these.unbal,tau=myparams$tau,grp.var = F, time.var = T)
-tv.agg <- agg.data.common(tv.data,is.tv=T,is.gv=F)
-
-gv.data   <- add.trt.effects(these.unbal,tau=myparams$tau,grp.var = T, time.var = F)
-gv.agg <- agg.data.common(gv.data,is.tv=T,is.gv=T)
-
-gtv.data  <- add.trt.effects(these.unbal,tau=myparams$tau,grp.var = T, time.var = T)
-gtv.agg <- agg.data.common(gtv.data,is.tv=T,is.gv=T)
-
-unbal.truth <- bind_rows(cons.agg$month_true %>% mutate(agg="month"),cons.agg$quarter_true %>% mutate(agg="quarter"),cons.agg$year_true %>% mutate(agg="year")) %>% mutate(trteff="constant",grp=1) %>%
-  bind_rows(bind_rows(tv.agg$month_true %>% mutate(agg="month"),tv.agg$quarter_true %>% mutate(agg="quarter"),tv.agg$year_true %>% mutate(agg="year")) %>% mutate(trteff="time-varying",grp=1)) %>%
-  bind_rows(bind_rows(gv.agg$month_true %>% mutate(agg="month"),gv.agg$quarter_true %>% mutate(agg="quarter"),gv.agg$year_true %>% mutate(agg="year")) %>% mutate(trteff="group-varying")) %>%
-  bind_rows(bind_rows(gtv.agg$month_true %>% mutate(agg="month"),gtv.agg$quarter_true %>% mutate(agg="quarter"),gtv.agg$year_true %>% mutate(agg="year")) %>% mutate(trteff="group- and time-varying")) %>%
-  mutate(panel="unbalanced")
-rm(cons.data,tv.data,tv.agg,gv.agg,gtv.agg)
-
-truth <- bind_rows(bal.truth,unbal.truth) %>%
-  mutate(grp=factor(grp),
-         trteff=factor(trteff,levels=c('constant','time-varying','group-varying','group- and time-varying')))
-
-# Time-varying estimates in common adoption case:
-ggplot(truth,aes(x=time,group=interaction(grp,panel))) + geom_line(aes(y=truth,col=grp,lty=panel)) +
+# Time-varying truth in parametric, common adoption scenarios:
+com.param.truth <- plot_truth(myparams,starts=rep(4,2),resample=F,staggered=F) %>% mutate(time=as.numeric(time))
+ggplot(com.param.truth,aes(x=time,group=interaction(grp,panel))) + geom_line(aes(y=truth,col=grp,lty=panel)) +
   facet_grid(trteff~agg,scale="free_x") + theme(panel.grid.minor=element_blank()) +
   scale_color_brewer(palette="Dark2",guide="none")
 ggsave("truth_param_common.png",width=5,height=5)
 
-these <- single.iter.param(myparams,staggered=T) %>%
-  mutate(trteff=factor(trteff,levels=c('null','constant','time-varying','group-varying','group- and time-varying')))
-# Time-varying estimates in common adoption case:
-ggplot(filter(these,group=="monthly_0",grepl("monthtrt",name),trteff!="null"),aes(x=time,group=panel)) + geom_line(aes(y=truth,col=panel)) +
-  facet_wrap(~trteff,ncol=2)
+# Time-varying truth in parametric, staggered adoption scenarios:
+stag.param.truth <- plot_truth(myparams,starts=3:4,resample=F,staggered=T) %>% filter(start.year>0)
+ggplot(stag.param.truth,aes(x=time,group=interaction(grp,start.year,panel))) + geom_line(aes(y=truth,col=grp,lty=panel)) +
+  facet_grid(trteff~agg,scale="free_x") + theme(panel.grid.minor=element_blank()) +
+  scale_color_brewer(palette="Dark2",guide="none")
+ggsave("truth_param_staggered.png",width=5,height=5)
+
+load("cleaned_force_data.RData")
+# Need a much smaller treatment effect for this outcome scale:
+myparams$tau <- 0.04
+## Need more treatment units with a rare outcome
+myparams$n.units <- 100 
+
+# Time-varying truth in resampling, common adoption scenarios:
+com.resamp.truth <- plot_truth(myparams,starts=rep(4,2),resample=T,staggered=F,data=force.dat) %>% mutate(time=as.numeric(time))
+ggplot(com.resamp.truth,aes(x=time,group=interaction(grp,panel))) + geom_line(aes(y=truth,col=grp,lty=panel)) +
+  facet_grid(trteff~agg,scale="free_x") + theme(panel.grid.minor=element_blank()) +
+  scale_color_brewer(palette="Dark2",guide="none")
+ggsave("truth_resamp_common.png",width=5,height=5)
+
+# Time-varying truth in resampling, staggered adoption scenarios
+stag.resamp.truth <- plot_truth(myparams,starts=3:4,resample=T,staggered=T,data=force.dat) %>% filter(start.year>0)
+ggplot(stag.resamp.truth,aes(x=time,group=interaction(grp,start.year,panel))) + geom_line(aes(y=truth,col=grp,lty=panel)) +
+  facet_grid(trteff~agg,scale="free_x") + theme(panel.grid.minor=element_blank()) +
+  scale_color_brewer(palette="Dark2",guide="none")
+ggsave("truth_resamp_staggered.png",width=5,height=5)

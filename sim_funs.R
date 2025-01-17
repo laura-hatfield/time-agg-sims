@@ -228,36 +228,87 @@ agg.data.common <- function(data,is.tv,is.gv){
   
   if (is.tv){
     if (is.gv){
-      month_true <- monthly_data %>% filter(posttrt==1) %>% group_by(m,grp) 
-      quarter_true <- quarterly_data %>% filter(posttrt==1) %>% group_by(q,grp) 
-      year_true <- yearly_data %>% filter(posttrt==1) %>% group_by(year,grp) 
+      month_true <- monthly_data %>% filter(treatment==1) %>% group_by(m,grp) 
+      quarter_true <- quarterly_data %>% filter(treatment==1) %>% group_by(q,grp) 
+      year_true <- yearly_data %>% filter(treatment==1) %>% group_by(year,grp) 
     } else {
-      month_true <- monthly_data %>% filter(posttrt==1) %>% group_by(m) 
-      quarter_true <- quarterly_data %>% filter(posttrt==1) %>% group_by(q)
-      year_true <- yearly_data %>% filter(posttrt==1) %>% group_by(year) 
+      month_true <- monthly_data %>% filter(treatment==1) %>% group_by(m) 
+      quarter_true <- quarterly_data %>% filter(treatment==1) %>% group_by(q)
+      year_true <- yearly_data %>% filter(treatment==1) %>% group_by(year) 
     }
-    month_true <- month_true %>% summarize(truth=mean(truth)) %>% rename(time=m)
-    quarter_true <- quarter_true  %>% summarize(truth=mean(truth)) %>% rename(time=q)
-    year_true <- year_true %>% summarize(truth=mean(truth)) %>% rename(time=year)
+    month_true <- month_true %>% summarize(truth=mean(truth),.groups="drop") %>% rename(time=m) 
+    quarter_true <- quarter_true  %>% summarize(truth=mean(truth),.groups="drop") %>% rename(time=q)
+    year_true <- year_true %>% summarize(truth=mean(truth),.groups="drop") %>% rename(time=year)
   } else {
     if (is.gv){
-      month_true <- monthly_data %>% filter(posttrt==1) %>% group_by(post,grp) %>%
-        summarize(truth=mean(truth)) %>% mutate(time="post") %>% select(-post)
-      quarter_true <- quarterly_data %>% filter(posttrt==1) %>% group_by(post,grp) %>%
-        summarize(truth=mean(truth)) %>% mutate(time="post") %>% select(-post)
-      year_true <- yearly_data %>% filter(posttrt==1) %>% group_by(post,grp) %>%
-        summarize(truth=mean(truth)) %>% mutate(time="post") %>% select(-post)
+      month_true <- monthly_data %>% filter(treatment==1) %>% group_by(post,grp) %>%
+        summarize(truth=mean(truth),.groups="drop") %>% mutate(time="post") %>% select(-post)
+      quarter_true <- quarterly_data %>% filter(treatment==1) %>% group_by(post,grp) %>%
+        summarize(truth=mean(truth),.groups="drop") %>% mutate(time="post") %>% select(-post)
+      year_true <- yearly_data %>% filter(treatment==1) %>% group_by(post,grp) %>%
+        summarize(truth=mean(truth),.groups="drop") %>% mutate(time="post") %>% select(-post)
     } else {
-      month_true <- monthly_data %>% filter(posttrt==1) %>% group_by(post) %>%
-        summarize(truth=mean(truth)) %>% mutate(time="post") %>% select(-post)
-      quarter_true <- quarterly_data %>% filter(posttrt==1) %>% group_by(post) %>%
-        summarize(truth=mean(truth)) %>% mutate(time="post") %>% select(-post)
-      year_true <- yearly_data %>% filter(posttrt==1) %>% group_by(post) %>%
-        summarize(truth=mean(truth)) %>% mutate(time="post") %>% select(-post)
+      month_true <- monthly_data %>% filter(treatment==1) %>% group_by(post) %>%
+        summarize(truth=mean(truth),.groups="drop") %>% mutate(time="post") %>% select(-post)
+      quarter_true <- quarterly_data %>% filter(treatment==1) %>% group_by(post) %>%
+        summarize(truth=mean(truth),.groups="drop") %>% mutate(time="post") %>% select(-post)
+      year_true <- yearly_data %>% filter(treatment==1) %>% group_by(post) %>%
+        summarize(truth=mean(truth),.groups="drop") %>% mutate(time="post") %>% select(-post)
     }
   }
   return(list('monthly'=monthly_data,'quarterly'=quarterly_data,'yearly'=yearly_data,
-         'month_true'=month_true,'quarter_true'=quarter_true,'year_true'=year_true))
+         'month_true'=month_true %>% mutate(agg="month"),
+         'quarter_true'=quarter_true %>% mutate(agg="quarter"),
+         'year_true'=year_true %>% mutate(agg="year")))
+}
+agg.data.staggered <- function(data,is.gv=F){
+  monthly_data <- data %>% ungroup() %>%
+    mutate(unitID=as.numeric(unitID)) 
+  
+  ## Aggregate to quarter
+  quarterly_data = monthly_data %>% group_by(unitID,q,start.quarter) %>%
+    summarise(Y=mean(Y),.groups="drop")
+  
+  # Aggregate to year
+  yearly_data = monthly_data %>% group_by(unitID,year,start.year) %>%
+    summarise(Y=mean(Y),.groups="drop") 
+  
+  # Truth by treatment timing group at each post-treatment time point
+  # For use in plotting functions, can also group by heterogeneous treatment groups
+  if (is.gv){
+    month_true <- data %>% group_by(start.month,grp,m)
+    quarter_true <- data %>% group_by(start.quarter,grp,q) 
+    year_true <- data %>% group_by(start.year,grp,year)
+  } else {
+    month_true <- data %>% group_by(start.month,m)
+    quarter_true <- data %>% group_by(start.quarter,q)
+    year_true <- data %>% group_by(start.year,year)
+  }
+  month_true <- month_true %>% summarize(truth=mean(truth),count=length(unique(unitID)),.groups="drop") %>% rename(time=m) %>% mutate(agg="month")
+  quarter_true <- quarter_true %>% summarize(truth=mean(truth),count=length(unique(unitID)),.groups="drop") %>% rename(time=q) %>% mutate(agg="quarter")
+  year_true <-  year_true %>%  summarize(truth=mean(truth),count=length(unique(unitID)),.groups="drop") %>% rename(time=year) %>% mutate(agg="year")
+    
+  # Using relative time, compute the true treatment effect by weighting the truth by the proportion of units contributing at each time
+  dynamic_truth <-  bind_rows(month_true %>% filter(start.month!=0) %>% mutate(time=time-start.month) %>% group_by(time) %>%
+                                mutate(total=sum(count)) %>% ungroup() %>% mutate(wt=count/total) %>% group_by(time,agg) %>%
+                                summarize(truth=weighted.mean(truth,w=wt),.groups="drop"),
+                              quarter_true %>% filter(start.quarter!=0) %>% mutate(time=time-start.quarter) %>% group_by(time) %>%
+                                mutate(total=sum(count)) %>% ungroup() %>% mutate(wt=count/total) %>% group_by(time,agg) %>%
+                                summarize(truth=weighted.mean(truth,w=wt),.groups="drop"),
+                              year_true %>% filter(start.year!=0) %>% mutate(time=time-start.year) %>% group_by(time) %>% 
+                                mutate(total=sum(count)) %>% ungroup() %>% mutate(wt=count/total) %>% group_by(time,agg) %>%
+                                summarize(truth=weighted.mean(truth,w=wt),.groups="drop"))
+  
+  static_truth <- bind_rows(month_true %>% filter(time>=start.month,start.month!=0) %>% 
+                              group_by(start.month,agg) %>% summarize(truth=mean(truth),.groups="drop") %>% rename(time=start.month),
+                            quarter_true %>% filter(time>=start.quarter,start.quarter!=0) %>% 
+                              group_by(start.quarter,agg)  %>% summarize(truth=mean(truth),.groups="drop") %>% rename(time=start.quarter),
+                            year_true %>% filter(time>=start.year,start.year!=0) %>% 
+                              group_by(start.year,agg) %>% summarize(truth=mean(truth),.groups="drop") %>% rename(time=start.year))
+  
+  return(list('monthly'=monthly_data,'quarterly'=quarterly_data,'yearly'=yearly_data,
+              'month_true'=month_true,'quarter_true'=quarter_true,'year_true'=year_true,
+              'dynamic_truth'=dynamic_truth,'static_truth'=static_truth))
 }
 
 analyze.data.common <- function(data,is.tv){
@@ -319,25 +370,13 @@ analyze.data.common <- function(data,is.tv){
 }
 
 analyze.data.CS <- function(data){
-  monthly_data <- data %>% ungroup() %>%
-    mutate(unitID=as.numeric(unitID)) # Requires a numeric unit ID variable
-  
-  ## Aggregate to quarter
-  quarterly_data = monthly_data %>%
-    group_by(unitID,q,start.quarter) %>%
-    summarise(Y=mean(Y),.groups="keep") %>% ungroup() 
-  
-  # Aggregate to year
-  yearly_data = monthly_data %>%
-    group_by(unitID,year,start.year) %>%
-    summarise(Y=mean(Y),.groups="keep") %>% ungroup() 
-  
+  agg.dat <- agg.data.staggered(data)
   monthly_DID <- did::att_gt(yname = "Y",
                              tname = "m",
                              idname = "unitID",
                              gname = "start.month",
                              xformla = ~1,
-                             data = monthly_data,
+                             data = agg.dat$monthly,
                              allow_unbalanced_panel = TRUE)
   
   quarterly_DID <- did::att_gt(yname = "Y",
@@ -345,7 +384,7 @@ analyze.data.CS <- function(data){
                                idname = "unitID",
                                gname = "start.quarter",
                                xformla = ~1,
-                               data = quarterly_data,
+                               data = agg.dat$quarterly,
                                allow_unbalanced_panel = TRUE)
   
   yearly_DID <-  did::att_gt(yname = "Y",
@@ -353,17 +392,8 @@ analyze.data.CS <- function(data){
                              idname = "unitID",
                              gname = "start.year",
                              xformla = ~1,
-                             data = yearly_data,
+                             data = agg.dat$yearly,
                              allow_unbalanced_panel = TRUE)
-  
-  # Truth by treatment timing group at each post-treatment time point
-  # These are the group-time estimates
-  month_true <- data %>% group_by(start.month,m) %>%
-    summarize(truth=mean(truth),count=length(unique(unitID)),.groups="drop") %>% rename(time=m)
-  quarter_true <- data %>% group_by(start.quarter,q) %>%
-    summarize(truth=mean(truth),count=length(unique(unitID)),.groups="drop") %>% rename(time=q)
-  year_true <- data %>% group_by(start.year,year) %>%
-    summarize(truth=mean(truth),count=length(unique(unitID)),.groups="drop") %>% rename(time=year)
   
   month.agg.es <- did::aggte(monthly_DID, type = "dynamic", na.rm=TRUE)
   month.agg.gs <- did::aggte(monthly_DID, type = "group", na.rm=TRUE)
@@ -378,23 +408,9 @@ analyze.data.CS <- function(data){
   static <- bind_rows(tibble('est'= month.agg.gs$att.egt, 'se'= month.agg.gs$se.egt, 'time'=month.agg.gs$egt, 'agg'="month"),
                       tibble('est'= quarter.agg.gs$att.egt, 'se'= quarter.agg.gs$se.egt, 'time'=quarter.agg.gs$egt, 'agg'="quarter"),
                       tibble('est'= year.agg.gs$att.egt, 'se'= year.agg.gs$se.egt, 'time'=year.agg.gs$egt, 'agg'="year"))
-  dynamic_truth <-  bind_rows(month_true %>% filter(start.month!=0) %>% mutate(time=time-start.month) %>% group_by(time) %>%
-                                mutate(total=sum(count)) %>% ungroup() %>% mutate(wt=count/total) %>% group_by(time) %>%
-                                summarize(truth=weighted.mean(truth,w=wt)) %>% mutate(agg="month"),
-                              quarter_true %>% filter(start.quarter!=0) %>% mutate(time=time-start.quarter) %>% group_by(time) %>%
-                                mutate(total=sum(count)) %>% ungroup() %>% mutate(wt=count/total) %>% group_by(time) %>%
-                                summarize(truth=weighted.mean(truth,w=wt)) %>% mutate(agg="quarter"),
-                              year_true %>% filter(start.year!=0) %>% mutate(time=time-start.year) %>% group_by(time) %>% 
-                                mutate(total=sum(count)) %>% ungroup() %>% mutate(wt=count/total) %>% group_by(time) %>%
-                                summarize(truth=weighted.mean(truth,w=wt)) %>% mutate(agg="year"))
-  static_truth <- bind_rows(month_true %>% group_by(start.month) %>% filter(time>=start.month) %>% summarize(truth=mean(truth)) %>% 
-                              mutate(agg="month") %>% rename(time=start.month),
-                            quarter_true %>% group_by(start.quarter) %>% filter(time>=start.quarter) %>% summarize(truth=mean(truth)) %>%
-                              mutate(agg="quarter") %>% rename(time=start.quarter),
-                            year_true %>% group_by(start.year) %>% filter(time>=start.year) %>% summarize(truth=mean(truth)) %>%
-                              mutate(agg="year") %>% rename(time=start.year))
-  dynamic_results <- left_join(dynamic,dynamic_truth,by=c('time','agg')) %>% mutate(estimand="Time-varying")
-  static_results <- left_join(static,static_truth,by=c("time","agg")) %>% mutate(estimand="Overall")
+  
+  dynamic_results <- left_join(dynamic,agg.dat$dynamic_truth,by=c('time','agg')) %>% mutate(estimand="Time-varying")
+  static_results <- left_join(static,agg.dat$static_truth,by=c("time","agg")) %>% mutate(estimand="Overall")
   
   results <- bind_rows(dynamic_results,static_results)
   return(results)
