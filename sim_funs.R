@@ -484,31 +484,23 @@ make.data <- function(long.dat,trt.dat){
 }
 
 
-single.iter.param <- function(params,staggered){
-  bal.data   <- generate.data(params,month.byunit=T,quarter.byunit=T,unbalanced=F)
-  unbal.data <- generate.data(params,month.byunit=T,quarter.byunit=T,unbalanced=T)
-  
-  bal.trt.dat <- assign.treatment(bal.data,starts=3:(params$n.year-2),staggered=staggered)
-  unbal.trt.dat <- assign.treatment(unbal.data,starts=3:(params$n.year-2),staggered=staggered)
-  
-  bal.rand.results <- inject.analyze(make.data(bal.data,bal.trt.dat),params,staggered) %>%
-    mutate(panel='balanced',assignment='random')
-  unbal.rand.results <- inject.analyze(make.data(unbal.data,unbal.trt.dat),params,staggered) %>%
-    mutate(panel='unbalanced',assignment='random')
-  
-  return(rbind(bal.rand.results,unbal.rand.results))
-}
+single.iter <- function(params,staggered,resampling=F,starts,data){
+  if (resampling){
+    bal.data <- resample(data,n.units=myparams$n.units,starts,unbalanced=F) 
+    unbal.data <- resample(data,n.units=myparams$n.units,starts,unbalanced=T) 
+  } else {
+    bal.data   <- generate.data(params,month.byunit=T,quarter.byunit=T,unbalanced=F)
+    unbal.data <- generate.data(params,month.byunit=T,quarter.byunit=T,unbalanced=T)
+    starts <- 3:(params$n.year-2)
+  }
 
-single.iter.resamp <- function(params,data,starts,staggered){
-  unbal.data <- resample(data,n.units=myparams$n.units,starts,unbalanced=T) 
+  bal.trt.dat <- assign.treatment(bal.data,starts=starts,staggered=staggered)
+  bal.rand.results <- inject.analyze(make.data(bal.data,bal.trt.dat),params,staggered) %>%
+    mutate(panel='balanced',assignment='random')  
+
   unbal.trt.dat <- assign.treatment(unbal.data,starts=starts,staggered=staggered)
   unbal.rand.results <- inject.analyze(make.data(unbal.data,unbal.trt.dat),params,staggered) %>%
-    mutate(panel="unbalanced",assignment="random")
-  
-  bal.data <- resample(data,n.units=myparams$n.units,starts,unbalanced=F)  
-  bal.trt.dat <- assign.treatment(bal.data,starts=starts,staggered=staggered)  
-  bal.rand.results <- inject.analyze(make.data(bal.data,bal.trt.dat),params,staggered) %>%
-    mutate(panel='balanced',assignment='random')
+    mutate(panel='unbalanced',assignment='random')
   
   return(rbind(bal.rand.results,unbal.rand.results))
 }

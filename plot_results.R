@@ -75,18 +75,18 @@ com.param.truth <- plot_truth(myparams,starts=rep(4,2),resample=F,staggered=F) %
 ggplot(com.param.truth,aes(x=time,group=interaction(grp,panel))) + geom_line(aes(y=truth,col=grp,lty=panel)) +
   facet_grid(trteff~agg,scale="free_x") + theme(panel.grid.minor=element_blank()) +
   scale_color_brewer(palette="Dark2",guide="none")
-ggsave("truth_param_common.png",width=5,height=5)
+ggsave("figures/truth_param_common.png",width=5,height=5)
 
 # Time-varying truth in parametric, staggered adoption scenarios:
 stag.param.truth <- plot_truth(myparams,starts=3:4,resample=F,staggered=T) %>% filter(start.year>0)
 ggplot(stag.param.truth,aes(x=time,group=interaction(grp,start.year,panel))) + geom_line(aes(y=truth,col=grp,lty=panel)) +
   facet_grid(trteff~agg,scale="free_x") + theme(panel.grid.minor=element_blank()) +
   scale_color_brewer(palette="Dark2",guide="none")
-ggsave("truth_param_staggered.png",width=5,height=5)
+ggsave("figures/truth_param_staggered.png",width=5,height=5)
 
 load("cleaned_force_data.RData")
 # Need a much smaller treatment effect for this outcome scale:
-myparams$tau <- 0.04
+myparams$tau <- 0.08
 ## Need more treatment units with a rare outcome
 myparams$n.units <- 100 
 
@@ -95,11 +95,24 @@ com.resamp.truth <- plot_truth(myparams,starts=rep(4,2),resample=T,staggered=F,d
 ggplot(com.resamp.truth,aes(x=time,group=interaction(grp,panel))) + geom_line(aes(y=truth,col=grp,lty=panel)) +
   facet_grid(trteff~agg,scale="free_x") + theme(panel.grid.minor=element_blank()) +
   scale_color_brewer(palette="Dark2",guide="none")
-ggsave("truth_resamp_common.png",width=5,height=5)
+ggsave("figures/truth_resamp_common.png",width=5,height=5)
 
 # Time-varying truth in resampling, staggered adoption scenarios
 stag.resamp.truth <- plot_truth(myparams,starts=3:4,resample=T,staggered=T,data=force.dat) %>% filter(start.year>0)
 ggplot(stag.resamp.truth,aes(x=time,group=interaction(grp,start.year,panel))) + geom_line(aes(y=truth,col=grp,lty=panel)) +
   facet_grid(trteff~agg,scale="free_x") + theme(panel.grid.minor=element_blank()) +
   scale_color_brewer(palette="Dark2",guide="none")
-ggsave("truth_resamp_staggered.png",width=5,height=5)
+ggsave("figures/truth_resamp_staggered.png",width=5,height=5)
+
+#### Show the whole distribution of truth and estimates ####
+com.results <- readRDS("time-agg-sims-results/common_sim_results.rds")
+stag.results <- readRDS("time-agg-sims-results/stag_sim_results.rds")
+resamp.com.results <- readRDS("time-agg-sims-results/resamp_com_sim_results.rds")
+resamp.stag.results <- readRDS("time-agg-sims-results/resamp_stag_sim_results.rds")
+
+plot_mc.dist(com.results,staggered=F,filename="figures/com_param_est_dist.png")
+plot_mc.dist(stag.results,staggered=T,filename="figures/stag_param_est_dist.png")
+plot_mc.dist(resamp.com.results,staggered=F,filename="figures/com_resamp_est_dist.png")
+plot_mc.dist(resamp.stag.results,staggered=T,filename="figures/stag_resamp_est_dist.png")
+
+

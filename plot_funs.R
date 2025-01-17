@@ -233,6 +233,26 @@ plot_truth <- function(params,data,starts,resample=F,staggered=F){
   return(truth)
 }
 
+plot_mc.dist <- function(results,staggered,filename){
+  if (staggered){
+    these.res <- results %>% filter(estimand=="Time-varying") %>% select(agg,trteff,adoption,panel,assignment,iter,time,est,truth) %>%
+      mutate(trteff=factor(trteff,levels=c('null','constant','time-varying','group-varying','group- and time-varying')))
+  } else {
+    these.res <- results %>% filter(time!="post",grepl("0",group)) %>% mutate(agg=ifelse(group=="monthly_0","month",ifelse(group=="quarterly_0","quarter","year"))) %>% 
+      select(agg,trteff,adoption,panel,assignment,iter,time,est,truth) %>%
+      mutate(trteff=factor(trteff,levels=c('null','constant','time-varying','group-varying','group- and time-varying')))
+  }
+  
+  tv.truth <- these.res %>% group_by(agg,trteff,panel,time) %>% summarize(truth=mean(truth),.groups="drop") %>% mutate(time=as.numeric(time))
+  tv.est.quantiles <- these.res %>% group_by(agg,trteff,panel,time) %>% 
+    summarize(q025=quantile(est,.025),q25=quantile(est,.25),q50=quantile(est,.50),q75=quantile(est,.75),q975=quantile(est,.975),.groups="drop") %>% mutate(time=as.numeric(time))
+  
+  thisplot <- ggplot(filter(tv.est.quantiles,panel=="balanced"),aes(x=time,group=panel)) + geom_line(aes(y=q50)) + geom_line(aes(y=q25),lty=2) + geom_line(aes(y=q75),lty=2) +
+    geom_line(aes(y=q025),lty=3) + geom_line(aes(y=q975),lty=3) +
+    geom_line(data=filter(tv.truth,panel=="balanced"),aes(x=time,y=truth),col='red') + 
+    facet_grid(trteff~agg,scale="free_x") + scale_y_continuous("Treatment effect")
+  ggsave(filename,thisplot,width=6.5,height=8)
+}
 
 
 
