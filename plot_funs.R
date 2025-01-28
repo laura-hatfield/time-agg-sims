@@ -22,7 +22,7 @@ process_results_com <- function(results){
   com.est.summaries <- est.prelim %>%
     mutate(agg=factor(agg,levels=c('weekly','monthly','quarterly','yearly'),
                       labels=c('week','month','quarter','year')),
-           model=factor(model,levels=c('2x2','0','uy','uq','sq','um','sm','uw','sw')),
+           model=factor(model,levels=c('2x2','0','uy')),
            trteff=factor(trteff,levels=c('null','constant','time-varying','group-varying','group- and time-varying'),
                          labels=c('null','constant','time-varying','group-varying','group-time')),
            label=paste(estimand,panel,sep="\n"))
@@ -31,7 +31,7 @@ process_results_com <- function(results){
   com.test.summaries <- test.prelim %>%
     mutate(agg=factor(agg,levels=c('weekly','monthly','quarterly','yearly'),
                       labels=c('week','month','quarter','year')),
-           model=factor(model,levels=c('2x2','0','uy','uq','sq','um','sm','uw','sw')),
+           model=factor(model,levels=c('2x2','0','uy')),
            trteff=factor(trteff,levels=c('null','constant','time-varying','group-varying','group- and time-varying'),
                          labels=c('null','constant','time-varying','group-varying','group-time'))) %>%
     # Bind on the individual time-varying effects averaged over post-period times
@@ -44,12 +44,13 @@ process_results_com <- function(results){
                       ifelse(!grepl("time",trteff),stat.sig,NA),
                       ifelse(trteff=="null",stat.sig,NA)),
            label=paste(name,panel,sep="\n"))
-  
   return(list("est"=com.est.summaries,"test"=com.test.summaries))
 }
 
 process_results_stag <- function(results){
   stag.est.summaries <- results %>%
+    # For comparability with the common scenarios, just look at post-period effects
+    filter(time >= 0) %>%
     # Compute the metrics relevant to individual effect estimates
     mutate(lb=est-qnorm(.975)*se,
            ub=est+qnorm(.975)*se,
@@ -58,15 +59,16 @@ process_results_stag <- function(results){
            stat.sig=((lb<0)&(ub<0))|((lb>0)&(ub>0)),
            sq.err=(est-truth)^2,
            model="CSA") %>%
+    # Average over iterations, but not time (yet)
     group_by(panel,assignment,trteff,estimand,agg,model) %>% 
     summarize(mc.sd=sqrt(var(est)),
               across(c(est,se,truth,covers:sq.err),\(x) mean(x,na.rm=T)),.groups="keep") %>% ungroup() %>%
-    mutate(agg=factor(agg,levels=c('week','month','quarter','year')),
+    mutate(agg=factor(agg,levels=c('month','quarter','year')),
            trteff=factor(trteff,levels=c('null','constant','time-varying','group-varying','group- and time-varying'),
                          labels=c('null','constant','time-varying','group-varying','group-time')),
            power=ifelse(trteff!="null",stat.sig,NA),
-           t1e=ifelse(trteff=="null",stat.sig,NA),
-           rmse=sqrt(sq.err))
+           t1e=ifelse(trteff=="null",stat.sig,NA)) %>%
+    mutate(rmse=sqrt(sq.err))
   return(list('est'=stag.est.summaries))
 }
 
@@ -89,12 +91,15 @@ score_mod_perf <- function(summaries){
   scored_perf <- perf %>%
     arrange(panel,assignment,trteff,estimand,metric,agg,abs(value)) %>%
     group_by(panel,assignment,trteff,estimand,metric,agg) %>%
-    # Find the best-performing level: for these, last is best
-    mutate(best=ifelse(metric%in%c('covers','power.Individual','power.JointF','power.Trend'),last(value,na_rm=TRUE),
-                       # For the rest, first is best
-                       first(value,na_rm=TRUE))) %>% ungroup() %>%
-    # Scale the difference in units of the treatment effect if not already bounded
-    mutate(decrement=ifelse((metric%in%c('bias','rmse','se','mc.sd'))&(trteff!="null"),abs(abs(value)-abs(best))/abs(truth),abs(abs(value)-abs(best))),
+    # Find the best-performing (or nominal) level: 
+    mutate(best=ifelse(metric=="covers",.95,
+                       ifelse(grepl("t1e",metric),.05,
+                              ifelse(grepl('power',metric),last(value,na_rm=TRUE),
+                                     # For the rest, first (smallest) is best
+                                     ifelse(metric%in%c('bias','mc.sd','rmse','se'),first(value,na_rm=TRUE),NA))))) %>% ungroup() %>%
+    mutate(decrement=abs(abs(value)-abs(best)),
+           # Percent decrement if on SD scale
+           pct.decrement=ifelse(metric%in%c('mc.sd','rmse','se'),decrement/abs(best),decrement),
            label=factor(metric,levels=c('bias','mc.sd','rmse','se','covers',
                                         'power.Individual','power.JointF','power.Trend',
                                         't1e.Individual','t1e.JointF','t1e.Trend'),
@@ -132,15 +137,18 @@ score_agg_perf <- function(summaries,staggered){
   scored_perf <- perf %>%
     arrange(panel,assignment,trteff,estimand,metric,abs(value)) %>%
     group_by(panel,assignment,trteff,estimand,metric) %>%
-    # Find the best-performing level: for these, last is best
-    mutate(best=ifelse(metric%in%c('covers','power.Individual','power.JointF','power.Trend'),
-                       last(value,na_rm=TRUE),
-                       # For the rest, first is best
-                       first(value,na_rm=TRUE))) %>% ungroup() %>%
-    mutate(scale=ifelse(metric%in%c('bias','rmse','se','mc.sd'),"Trt eff","Prop"),
-           # Scale the difference in units of the treatment effect
-           decrement=abs(abs(value)-abs(best)),
-           label=factor(metric,levels=c('bias','mc.sd','rmse','se','covers',
+    # Find the best-performing (or nominal) level: 
+    mutate(best=ifelse(metric=="covers",.95,
+                       ifelse(grepl("t1e",metric),.05,
+                              ifelse(grepl('power',metric),last(value,na_rm=TRUE),
+                                     # For the rest, first (smallest) is best
+                                     ifelse(metric%in%c('bias','mc.sd','rmse','se'),first(value,na_rm=TRUE),NA))))) %>% ungroup() %>%
+    # Don't give the joint test credit for power when its t1e is so bad
+    mutate(decrement=abs(abs(value)-abs(best)),
+           # Percent decrement if on SD scale
+           pct.decrement=ifelse(metric%in%c('mc.sd','rmse','se'),decrement/abs(best),decrement),
+           label=factor(metric,levels=c('bias','mc.sd','rmse','se',
+                                        'covers',
                                         'power.Individual','power.JointF','power.Trend',
                                         't1e.Individual','t1e.JointF','t1e.Trend'),
                         labels=c('Bias','MC SD','RMSE','SE','Coverage',
@@ -156,28 +164,30 @@ plot_mod_perf <- function(perf_dat,save.prefix){
   for (i in 1:dim(combos)[1]){
     p1 <- ggplot(filter(perf_dat,panel==combos[i,'panel'],estimand==combos[i,'estimand'],
                   !is.na(value)),aes(x=model,y=label)) +
-      geom_tile(aes(fill=decrement)) + geom_text(aes(label=signif(value,2),col=decrement>0.25)) + 
-      scale_color_manual(values=c('FALSE'='white','TRUE'='black'),guide="none") +
-      scale_fill_gradient(low='#762a83',high='white',limits=c(0,1),oob=scales::squish,guide="none") +
+      geom_tile(aes(fill=pct.decrement)) + geom_text(aes(label=signif(value,2))) + 
+      scale_color_manual(values=c('FALSE'='black','TRUE'='white'),guide="none") +
+      scale_fill_gradient(low='white',high='darkgrey',guide="none",limits=c(0,.2),oob=scales::squish) +
       facet_grid(trteff~agg,scale="free") + xlab("") + ylab("") +
       theme(axis.text.x = element_text(angle=45,hjust=1))
     ggsave(p1,file=paste0(c(paste0(c(save.prefix,'mod',as.character(combos[i,'panel']),
                             as.character(combos[i,'estimand'])),collapse="_"),".png"),collapse=""),
            width=6.5,height=9)
+    print(p1)
   }
 }
 
 plot_agg_perf <- function(perf_dat,save.prefix){
   this.est <- c('Overall','Time-varying')
   for (i in 1:2){
-    p1 <- ggplot(filter(perf_dat,estimand==this.est[i],!is.na(value)),aes(x=agg,y=label)) +
-      geom_tile(aes(fill=decrement)) + geom_text(aes(label=signif(value,2),col=decrement>0.25)) + 
-      scale_color_manual(values=c('FALSE'='white','TRUE'='black'),guide="none") +
-      scale_fill_gradient(low='#762a83',high='white',limits=c(0,1),oob=scales::squish,guide="none") +
+    p1 <- ggplot(filter(perf_dat,estimand==this.est[i],!is.na(value),metric!="power.JointF"),aes(x=agg,y=label)) +
+      geom_tile(aes(fill=pct.decrement)) + geom_text(aes(label=signif(value,2))) + 
+      scale_color_manual(values=c('FALSE'='black','TRUE'='white'),guide="none") +
+      scale_fill_gradient(low='white',high='darkgrey',guide="none",limits=c(0,.2),oob=scales::squish) +
       facet_grid(trteff~panel,scale="free_y") + xlab("") + ylab("") +
       theme(axis.text.x = element_text(angle=45,hjust=1))  
     ggsave(p1,file=paste0(c(paste0(c(save.prefix,'agg',as.character(this.est[i])),collapse="_"),".png"),collapse=""),
            width=6.5,height=9)
+    print(p1)
   }
 }
 
@@ -247,11 +257,29 @@ plot_mc.dist <- function(results,staggered,filename){
   tv.est.quantiles <- these.res %>% group_by(agg,trteff,panel,time) %>% 
     summarize(q025=quantile(est,.025),q25=quantile(est,.25),q50=quantile(est,.50),q75=quantile(est,.75),q975=quantile(est,.975),.groups="drop") %>% mutate(time=as.numeric(time))
   
-  thisplot <- ggplot(filter(tv.est.quantiles,panel=="balanced"),aes(x=time,group=panel)) + geom_line(aes(y=q50)) + geom_line(aes(y=q25),lty=2) + geom_line(aes(y=q75),lty=2) +
+  thisplot <- ggplot(filter(tv.est.quantiles,panel=="balanced"),aes(x=time,group=panel)) + 
+    geom_hline(yintercept = 0,col='darkgrey') + 
+    geom_line(aes(y=q50)) + geom_line(aes(y=q25),lty=2) + geom_line(aes(y=q75),lty=2) +
     geom_line(aes(y=q025),lty=3) + geom_line(aes(y=q975),lty=3) +
-    geom_line(data=filter(tv.truth,panel=="balanced"),aes(x=time,y=truth),col='red') + 
+    geom_line(data=filter(tv.truth,panel=="balanced"),aes(x=time,y=truth),col='red',lty=2) + 
     facet_grid(trteff~agg,scale="free_x") + scale_y_continuous("Treatment effect")
   ggsave(filename,thisplot,width=6.5,height=8)
+}
+
+table_winners <- function(summaries,bias,rmse,reject,prefix){
+  winners <- summaries %>% filter(metric %in%c('power.Individual','bias','rmse','t1e.Individual')) %>% 
+    # Apply separate thresholds for each metric
+    mutate(win=ifelse(metric%in%c("power.Individual","t1e.Individual"),decrement < reject,
+                      ifelse(metric=="bias",decrement < bias,
+                             ifelse(metric=="rmse",decrement < bias,FALSE)))) %>%
+    filter(win) %>%
+    select(panel,estimand,trteff,metric,agg) %>% mutate(agg=factor(agg,levels=c('month','quarter','year'),labels=c('m','q','y'))) %>%
+    arrange(panel,estimand,trteff,metric,agg) %>%
+    pivot_wider(names_from=metric,values_from = agg,values_fn=~paste0(.x,collapse="")) %>% 
+    mutate(reject=ifelse(trteff=="null",t1e.Individual,power.Individual)) %>%
+    select(panel,estimand,trteff,bias,reject,rmse)
+  print(winners)
+  write_csv(winners,file=paste0(prefix,"_agg_winners.csv"))
 }
 
 

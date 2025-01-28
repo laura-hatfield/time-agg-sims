@@ -24,7 +24,7 @@ myparams <- list(
 
 
 # Simulation in parallel
-cl <- parallel::makeCluster(100)
+cl <- parallel::makeCluster(10)
 doParallel::registerDoParallel(cl)
 nsims <- 5000
 

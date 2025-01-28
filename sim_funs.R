@@ -203,6 +203,7 @@ agg.data.common <- function(data,is.tv,is.gv){
            m=factor(m),
            q=factor(q),
            year=factor(year),
+           post=as.numeric(post),
            postmonth = factor(ifelse(post>0,m,0)),
            postmonthtrt = factor(ifelse(posttrt==1,m,0)))
   
@@ -242,18 +243,18 @@ agg.data.common <- function(data,is.tv,is.gv){
   } else {
     if (is.gv){
       month_true <- monthly_data %>% filter(treatment==1) %>% group_by(post,grp) %>%
-        summarize(truth=mean(truth),.groups="drop") %>% mutate(time="post") %>% select(-post)
+        summarize(truth=mean(truth),.groups="drop") %>% mutate(time=ifelse(post==1,"post","pre")) %>% select(-post)
       quarter_true <- quarterly_data %>% filter(treatment==1) %>% group_by(post,grp) %>%
-        summarize(truth=mean(truth),.groups="drop") %>% mutate(time="post") %>% select(-post)
+        summarize(truth=mean(truth),.groups="drop") %>% mutate(time=ifelse(post==1,"post","pre"))  %>% select(-post)
       year_true <- yearly_data %>% filter(treatment==1) %>% group_by(post,grp) %>%
-        summarize(truth=mean(truth),.groups="drop") %>% mutate(time="post") %>% select(-post)
+        summarize(truth=mean(truth),.groups="drop") %>% mutate(time=ifelse(post==1,"post","pre"))  %>% select(-post)
     } else {
       month_true <- monthly_data %>% filter(treatment==1) %>% group_by(post) %>%
-        summarize(truth=mean(truth),.groups="drop") %>% mutate(time="post") %>% select(-post)
+        summarize(truth=mean(truth),.groups="drop") %>% mutate(time=ifelse(post==1,"post","pre")) %>% select(-post)
       quarter_true <- quarterly_data %>% filter(treatment==1) %>% group_by(post) %>%
-        summarize(truth=mean(truth),.groups="drop") %>% mutate(time="post") %>% select(-post)
+        summarize(truth=mean(truth),.groups="drop") %>% mutate(time=ifelse(post==1,"post","pre"))  %>% select(-post)
       year_true <- yearly_data %>% filter(treatment==1) %>% group_by(post) %>%
-        summarize(truth=mean(truth),.groups="drop") %>% mutate(time="post") %>% select(-post)
+        summarize(truth=mean(truth),.groups="drop") %>% mutate(time=ifelse(post==1,"post","pre")) %>% select(-post)
     }
   }
   return(list('monthly'=monthly_data,'quarterly'=quarterly_data,'yearly'=yearly_data,
@@ -261,6 +262,7 @@ agg.data.common <- function(data,is.tv,is.gv){
          'quarter_true'=quarter_true %>% mutate(agg="quarter"),
          'year_true'=year_true %>% mutate(agg="year")))
 }
+
 agg.data.staggered <- function(data,is.gv=F){
   monthly_data <- data %>% ungroup() %>%
     mutate(unitID=as.numeric(unitID)) 
@@ -315,30 +317,30 @@ analyze.data.common <- function(data,is.tv){
   agg.dat <- agg.data.common(data,is.tv,is.gv=F)
   
   if (is.tv){
-    monthly_DID_2x2= estimatr::lm_robust(Y ~ post + treatment + postmonthtrt, data = agg.dat$monthly, clusters=unitID, se_type="stata")
+    monthly_DID_2x2= estimatr::lm_robust(Y ~ treatment + postmonthtrt, fixed_effects = ~postmonth, data = agg.dat$monthly, clusters=unitID, se_type="stata")
     monthly_DID_0  = estimatr::lm_robust(Y ~ postmonthtrt, fixed_effects = ~unitID + postmonth, data = agg.dat$monthly, clusters=unitID,se_type="stata")
-    monthly_DID_uy = estimatr::lm_robust(Y ~ postmonthtrt, fixed_effects = ~unitID + postmonth + year,data = agg.dat$monthly, clusters=unitID,se_type="stata")
+    monthly_DID_uy = estimatr::lm_robust(Y ~ postmonthtrt, fixed_effects = ~unitID + year + postmonth,data = agg.dat$monthly, clusters=unitID,se_type="stata")
     
-    quarterly_DID_2x2= estimatr::lm_robust(Y ~ post + treatment + postquartertrt, data = agg.dat$quarterly, clusters=unitID,se_type="stata")
+    quarterly_DID_2x2= estimatr::lm_robust(Y ~ treatment + postquartertrt, fixed_effects = ~postquarter, data = agg.dat$quarterly, clusters=unitID,se_type="stata")
     quarterly_DID_0  = estimatr::lm_robust(Y ~ postquartertrt, fixed_effects = ~unitID + postquarter, data = agg.dat$quarterly, clusters=unitID,se_type="stata")
-    quarterly_DID_uy = estimatr::lm_robust(Y ~ postquartertrt, fixed_effects = ~unitID + postquarter + year, data = agg.dat$quarterly, clusters=unitID,se_type="stata")
+    quarterly_DID_uy = estimatr::lm_robust(Y ~ postquartertrt, fixed_effects = ~unitID + year + postquarter, data = agg.dat$quarterly, clusters=unitID,se_type="stata")
     
-    yearly_DID_2x2 = estimatr::lm_robust(Y ~ post + treatment + postyeartrt, data = agg.dat$yearly, clusters=unitID,se_type="stata")
+    yearly_DID_2x2 = estimatr::lm_robust(Y ~ treatment + postyeartrt, fixed_effects = ~postyear, data = agg.dat$yearly, clusters=unitID,se_type="stata")
     yearly_DID_0   = estimatr::lm_robust(Y ~ postyeartrt, fixed_effects = ~unitID + postyear, data = agg.dat$yearly, clusters=unitID,se_type="stata")
-    yearly_DID_uy  = estimatr::lm_robust(Y ~ postyeartrt, fixed_effects = ~unitID + postyear + year, data = agg.dat$yearly, clusters=unitID,se_type="stata")
+    yearly_DID_uy  = estimatr::lm_robust(Y ~ postyeartrt, fixed_effects = ~unitID + year + postyear, data = agg.dat$yearly, clusters=unitID,se_type="stata")
     
   } else {
-    monthly_DID_2x2 =estimatr::lm_robust(Y~post+treatment+posttrt, data = agg.dat$monthly, clusters=unitID, se_type="stata")
-    monthly_DID_0 =  estimatr::lm_robust(Y~post+treatment+posttrt, fixed_effects = ~unitID, data = agg.dat$monthly, clusters=unitID,se_type="stata")
-    monthly_DID_uy = estimatr::lm_robust(Y~post+treatment+posttrt, fixed_effects = ~unitID + year,data = agg.dat$monthly, clusters=unitID,se_type="stata")
+    monthly_DID_2x2 =estimatr::lm_robust(Y ~ post + treatment + posttrt, data = agg.dat$monthly, clusters=unitID, se_type="stata")
+    monthly_DID_0 =  estimatr::lm_robust(Y ~ post + posttrt, fixed_effects = ~unitID, data = agg.dat$monthly, clusters=unitID,se_type="stata")
+    monthly_DID_uy = estimatr::lm_robust(Y ~ posttrt, fixed_effects = ~unitID + year,data = agg.dat$monthly, clusters=unitID,se_type="stata")
     
-    quarterly_DID_2x2 =estimatr::lm_robust(Y~post+treatment+posttrt, data = agg.dat$quarterly, clusters=unitID,se_type="stata")
-    quarterly_DID_0  = estimatr::lm_robust(Y~post+treatment+posttrt, fixed_effects = ~unitID, data = agg.dat$quarterly, clusters=unitID,se_type="stata")
-    quarterly_DID_uy = estimatr::lm_robust(Y~post+treatment+posttrt, fixed_effects = ~unitID + year, data = agg.dat$quarterly, clusters=unitID,se_type="stata")
+    quarterly_DID_2x2 =estimatr::lm_robust(Y ~ post + treatment + posttrt, data = agg.dat$quarterly, clusters=unitID,se_type="stata")
+    quarterly_DID_0  = estimatr::lm_robust(Y ~ post + posttrt, fixed_effects = ~unitID, data = agg.dat$quarterly, clusters=unitID,se_type="stata")
+    quarterly_DID_uy = estimatr::lm_robust(Y ~ posttrt, fixed_effects = ~unitID + year, data = agg.dat$quarterly, clusters=unitID,se_type="stata")
     
-    yearly_DID_2x2 =estimatr::lm_robust(Y~post+treatment+posttrt, data = agg.dat$yearly, clusters=unitID,se_type="stata")
-    yearly_DID_0 =  estimatr::lm_robust(Y~post+treatment+posttrt, fixed_effects = ~unitID, data = agg.dat$yearly, clusters=unitID,se_type="stata")
-    yearly_DID_uy = estimatr::lm_robust(Y~post+treatment+posttrt, fixed_effects = ~unitID + year, data = agg.dat$yearly, clusters=unitID,se_type="stata")
+    yearly_DID_2x2 =estimatr::lm_robust(Y ~ post + treatment + posttrt, data = agg.dat$yearly, clusters=unitID, se_type="stata")
+    yearly_DID_0 =  estimatr::lm_robust(Y ~ post + posttrt, fixed_effects = ~unitID, data = agg.dat$yearly, clusters=unitID,se_type="stata")
+    yearly_DID_uy = estimatr::lm_robust(Y ~ posttrt, fixed_effects = ~unitID + year, data = agg.dat$yearly, clusters=unitID,se_type="stata")
   }
   # Joint model estimates with truth
   monthly_results <- left_join(rbind(filter.fun(monthly_DID_2x2, "monthly_2x2"),
@@ -478,9 +480,9 @@ assign.treatment <- function(data,starts,staggered){
 }
 
 make.data <- function(long.dat,trt.dat){
-    left_join(long.dat,trt.dat,by='unitID') %>%
-      mutate(post = (m >= start.month) & (start.month!=0),
-             posttrt=post*treatment)
+  left_join(long.dat,trt.dat,by='unitID') %>% 
+    mutate(post = (m >= start.month) & (start.month!=0),
+           posttrt=post*treatment)
 }
 
 
