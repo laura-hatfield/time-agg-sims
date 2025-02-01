@@ -45,12 +45,12 @@ plot_mod_perf(com_mod_perf,save.prefix="figures/com_param")
 # Common, parametric, aggregations
 com_agg_perf <- score_agg_perf(com.summaries,staggered=F)
 plot_agg_perf(com_agg_perf,save.prefix="figures/com_param")
-table_winners(com_agg_perf,bias=.01,reject=.01,rmse=.1,prefix="com_param")
+table_winners(com_agg_perf,bias=.01,reject=.01,rmse=.1,prefix="figures/com_param")
 
 # Staggered, parametric, aggregations
 stag_agg_perf <- score_agg_perf(stag.summaries,staggered=T)
 plot_agg_perf(stag_agg_perf,save.prefix="figures/stag_param")
-table_winners(stag_agg_perf,bias=.01,reject=.01,rmse=.1,prefix="stag_param")
+table_winners(stag_agg_perf,bias=.01,reject=.01,rmse=.1,prefix="figures/stag_param")
 
 # Common, resampling, models
 resamp_com_mod_perf <- score_mod_perf(resamp.com.summaries)
@@ -59,12 +59,12 @@ plot_mod_perf(resamp_com_mod_perf,save.prefix="figures/com_resamp")
 # Common, resampling, aggregations
 resamp_com_agg_perf <- score_agg_perf(resamp.com.summaries,staggered=F)
 plot_agg_perf(resamp_com_agg_perf,save.prefix="figures/com_resamp")
-table_winners(resamp_com_agg_perf,bias=.01,reject=.01,rmse=.1,prefix="com_resamp")
+table_winners(resamp_com_agg_perf,bias=.01,reject=.01,rmse=.1,prefix="figures/com_resamp")
 
 # Staggered, resampling, aggregations
 resamp_stag_agg_perf <- score_agg_perf(resamp.stag.summaries,staggered=T)
 plot_agg_perf(resamp_stag_agg_perf,save.prefix="figures/stag_resamp")
-table_winners(resamp_stag_agg_perf,bias=.01,reject=.01,rmse=.1,prefix="stag_resamp")
+table_winners(resamp_stag_agg_perf,bias=.01,reject=.01,rmse=.1,prefix="figures/stag_resamp")
 
 #### True treatment effects by time, group ####
 myparams <- list(
@@ -154,7 +154,7 @@ myparams <- list(
 
 set.seed(2283)
 ## make one draw from parametric and resampling and compare their variances
-resamp.data <- resample(force.dat,n.units=100,starts=3:4,unbalanced=F) %>%
+resamp.data <- resample(force.dat,n.units=100,starts=3:4,unbalanced=T) %>%
   mutate(Y=Y*100)
 resamp.trt <- assign.treatment(resamp.data,starts=3:4,staggered=T)
 resamp.trt.dat <- make.data(resamp.data,resamp.trt)
@@ -202,7 +202,7 @@ ggplot(sum.stats,aes(x=time)) + geom_hline(yintercept=0,col='darkgrey') +
   geom_segment(aes(y=lb,yend=ub,col=grp),position=position_dodge(width=0.5)) + 
   facet_grid(outcomes~agg,scale="free") +
   scale_y_continuous("Mean outcome")
-ggsave("figures/mean_se_of_outcome.png",width=6,height=4)
+ggsave("figures/mean_se_of_outcome.png",width=8,height=6)
 
 ## Show how this translates into estimates:
 resamp.ests <- analyze.data.CS(resamp.null.data)
@@ -210,14 +210,16 @@ param.ests <- analyze.data.CS(param.null.data)
   
 sum.ests <- rbind(resamp.ests %>% mutate(outcomes="resampling"),
                   param.ests %>% mutate(outcomes="parametric")) %>%
-  mutate(lb=est-qnorm(.975)*se,
+  filter(time!="post") %>%
+  mutate(time=as.numeric(time),
+         lb=est-qnorm(.975)*se,
          ub=est+qnorm(.975)*se) %>%
   filter(estimand=="Time-varying")
 
 # Show estimate plus or minus SE
 ggplot(sum.ests,aes(x=time)) + geom_hline(yintercept=0,col='darkgrey') +
   geom_point(aes(y=est)) + geom_segment(aes(y=lb,yend=ub)) +facet_grid(outcomes~agg,scale="free") 
-ggsave("figures/mean_se_of_estimate.png",width=6,height=4)
+ggsave("figures/mean_se_of_estimate.png",width=8,height=6)
 
 ## Plot the same summary stats, but for the *difference* between treated and comparison
 resamp.stats <- resamp.null.data %>% 
@@ -260,4 +262,5 @@ ggplot(diff.stats,aes(x=time)) + geom_hline(yintercept=0,col='darkgrey') +
   geom_point((aes(y=mean,col=grp)),position=position_dodge(width=0.4)) + geom_segment(aes(y=lb,yend=ub,col=grp),position=position_dodge(width=0.5)) + 
   facet_grid(outcomes~agg,scale="free") +
   scale_y_continuous("Difference from never-treated")
-ggsave("figures/mean_se_of_tx-ctrl_diff.png",width=6,height=4)
+ggsave("figures/mean_se_of_tx-ctrl_diff.png",width=8,height=6)
+

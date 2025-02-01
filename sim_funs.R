@@ -300,13 +300,16 @@ agg.data.staggered <- function(data,is.gv=F){
                               year_true %>% filter(start.year!=0) %>% mutate(time=time-start.year) %>% group_by(time) %>% 
                                 mutate(total=sum(count)) %>% ungroup() %>% mutate(wt=count/total) %>% group_by(time,agg) %>%
                                 summarize(truth=weighted.mean(truth,w=wt),.groups="drop"))
-  
-  static_truth <- bind_rows(month_true %>% filter(time>=start.month,start.month!=0) %>% 
-                              group_by(start.month,agg) %>% summarize(truth=mean(truth),.groups="drop") %>% rename(time=start.month),
-                            quarter_true %>% filter(time>=start.quarter,start.quarter!=0) %>% 
-                              group_by(start.quarter,agg)  %>% summarize(truth=mean(truth),.groups="drop") %>% rename(time=start.quarter),
-                            year_true %>% filter(time>=start.year,start.year!=0) %>% 
-                              group_by(start.year,agg) %>% summarize(truth=mean(truth),.groups="drop") %>% rename(time=start.year))
+  ## Similarly, for static effects, weight by proportion in each treatment timing group
+  static_truth <- bind_rows(month_true %>% filter(time>=start.month,start.month!=0) %>% group_by(time) %>%
+                              mutate(total=sum(count)) %>% ungroup() %>% mutate(wt=count/total) %>% group_by(agg) %>%
+                              summarize(truth=weighted.mean(truth,w=wt),.groups="drop"),
+                            quarter_true %>% filter(time>=start.quarter,start.quarter!=0) %>% group_by(time) %>%
+                              mutate(total=sum(count)) %>% ungroup() %>% mutate(wt=count/total) %>% group_by(agg) %>%
+                              summarize(truth=mean(truth),.groups="drop"),
+                            year_true %>% filter(time>=start.year,start.year!=0) %>% group_by(time) %>%
+                              mutate(total=sum(count)) %>% ungroup() %>% mutate(wt=count/total) %>% group_by(agg) %>% 
+                              summarize(truth=mean(truth),.groups="drop"))
   
   return(list('monthly'=monthly_data,'quarterly'=quarterly_data,'yearly'=yearly_data,
               'month_true'=month_true,'quarter_true'=quarter_true,'year_true'=year_true,
@@ -377,6 +380,7 @@ analyze.data.CS <- function(data){
                              tname = "m",
                              idname = "unitID",
                              gname = "start.month",
+                             cband = FALSE,
                              xformla = ~1,
                              data = agg.dat$monthly,
                              allow_unbalanced_panel = TRUE)
@@ -385,6 +389,7 @@ analyze.data.CS <- function(data){
                                tname = "q",
                                idname = "unitID",
                                gname = "start.quarter",
+                               cband = FALSE,
                                xformla = ~1,
                                data = agg.dat$quarterly,
                                allow_unbalanced_panel = TRUE)
@@ -393,29 +398,28 @@ analyze.data.CS <- function(data){
                              tname = "year",
                              idname = "unitID",
                              gname = "start.year",
+                             cband = FALSE,
                              xformla = ~1,
                              data = agg.dat$yearly,
                              allow_unbalanced_panel = TRUE)
   
   month.agg.es <- did::aggte(monthly_DID, type = "dynamic", na.rm=TRUE)
-  month.agg.gs <- did::aggte(monthly_DID, type = "group", na.rm=TRUE)
   quarter.agg.es <- did::aggte(quarterly_DID, type = "dynamic", na.rm=TRUE)
-  quarter.agg.gs <- did::aggte(quarterly_DID, type = "group", na.rm=TRUE) 
   year.agg.es <- did::aggte(yearly_DID, type = "dynamic", na.rm=TRUE)
-  year.agg.gs <- did::aggte(yearly_DID, type = "group", na.rm=TRUE) 
-  
   dynamic <- bind_rows(tibble('est'= month.agg.es$att.egt, 'se'= month.agg.es$se.egt, 'time'=month.agg.es$egt, 'agg'="month"),
                        tibble('est'= quarter.agg.es$att.egt, 'se'= quarter.agg.es$se.egt, 'time'=quarter.agg.es$egt, 'agg'="quarter"),
                        tibble('est'= year.agg.es$att.egt, 'se'= year.agg.es$se.egt, 'time'=year.agg.es$egt, 'agg'="year"))
-  static <- bind_rows(tibble('est'= month.agg.gs$att.egt, 'se'= month.agg.gs$se.egt, 'time'=month.agg.gs$egt, 'agg'="month"),
-                      tibble('est'= quarter.agg.gs$att.egt, 'se'= quarter.agg.gs$se.egt, 'time'=quarter.agg.gs$egt, 'agg'="quarter"),
-                      tibble('est'= year.agg.gs$att.egt, 'se'= year.agg.gs$se.egt, 'time'=year.agg.gs$egt, 'agg'="year"))
+  dynamic_results <- left_join(dynamic,agg.dat$dynamic_truth,by=c('time','agg')) %>% mutate(estimand="Time-varying")  
   
-  dynamic_results <- left_join(dynamic,agg.dat$dynamic_truth,by=c('time','agg')) %>% mutate(estimand="Time-varying")
-  static_results <- left_join(static,agg.dat$static_truth,by=c("time","agg")) %>% mutate(estimand="Overall")
+  month.agg.gs <- did::aggte(monthly_DID, type = "group", na.rm=TRUE)
+  quarter.agg.gs <- did::aggte(quarterly_DID, type = "group", na.rm=TRUE) 
+  year.agg.gs <- did::aggte(yearly_DID, type = "group", na.rm=TRUE) 
+  static <- bind_rows(tibble('est'= month.agg.gs$overall.att, 'se'= month.agg.gs$overall.se, 'agg'="month"),
+                      tibble('est'= quarter.agg.gs$overall.att, 'se'= quarter.agg.gs$overall.se, 'agg'="quarter"),
+                      tibble('est'= year.agg.gs$overall.att, 'se'= year.agg.gs$overall.se, 'agg'="year"))
+  static_results <- left_join(static,agg.dat$static_truth,by=c("agg")) %>% mutate(estimand="Overall",time="post")
   
-  results <- bind_rows(dynamic_results,static_results)
-  return(results)
+  return(rbind(dynamic_results,static_results))
 }
 
 analyze.and.combine <- function(data){
@@ -486,10 +490,10 @@ make.data <- function(long.dat,trt.dat){
 }
 
 
-single.iter <- function(params,staggered,resampling=F,starts,data){
+single.iter <- function(params,staggered,resampling,starts,data){
   if (resampling){
-    bal.data <- resample(data,n.units=myparams$n.units,starts,unbalanced=F) 
-    unbal.data <- resample(data,n.units=myparams$n.units,starts,unbalanced=T) 
+    bal.data <-   resample(data,n.units=params$n.units,starts,unbalanced=F) 
+    unbal.data <- resample(data,n.units=params$n.units,starts,unbalanced=T) 
   } else {
     bal.data   <- generate.data(params,month.byunit=T,quarter.byunit=T,unbalanced=F)
     unbal.data <- generate.data(params,month.byunit=T,quarter.byunit=T,unbalanced=T)

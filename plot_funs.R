@@ -50,7 +50,8 @@ process_results_com <- function(results){
 process_results_stag <- function(results){
   stag.est.summaries <- results %>%
     # For comparability with the common scenarios, just look at post-period effects
-    filter(time >= 0) %>%
+    mutate(ispost=ifelse(estimand=="Overall",1,ifelse(as.numeric(time)>=0,1,0))) %>%
+    filter(ispost==1) %>%
     # Compute the metrics relevant to individual effect estimates
     mutate(lb=est-qnorm(.975)*se,
            ub=est+qnorm(.975)*se,
@@ -271,10 +272,10 @@ table_winners <- function(summaries,bias,rmse,reject,prefix){
     # Apply separate thresholds for each metric
     mutate(win=ifelse(metric%in%c("power.Individual","t1e.Individual"),decrement < reject,
                       ifelse(metric=="bias",decrement < bias,
-                             ifelse(metric=="rmse",decrement < bias,FALSE)))) %>%
+                             ifelse(metric=="rmse",decrement < rmse,FALSE)))) %>%
     filter(win) %>%
-    select(panel,estimand,trteff,metric,agg) %>% mutate(agg=factor(agg,levels=c('month','quarter','year'),labels=c('m','q','y'))) %>%
-    arrange(panel,estimand,trteff,metric,agg) %>%
+    select(estimand,panel,trteff,metric,agg) %>% mutate(agg=factor(agg,levels=c('month','quarter','year'),labels=c('m','q','y'))) %>%
+    arrange(estimand,panel,trteff,metric,agg) %>%
     pivot_wider(names_from=metric,values_from = agg,values_fn=~paste0(.x,collapse="")) %>% 
     mutate(reject=ifelse(trteff=="null",t1e.Individual,power.Individual)) %>%
     select(panel,estimand,trteff,bias,reject,rmse)
